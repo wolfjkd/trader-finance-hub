@@ -45,9 +45,20 @@
 |--------|------|--------|----------|------|
 | **通达信 MCP** (tdx-connector) | MCP | 6大模块 | 行情/公告/研报/新闻/K线/选股 | 运行中 |
 | **Wind MCP** (wind-mcp-skill) | MCP + CLI | 8个server | 深度财务/技术指标/板块/宏观 | 运行中 |
-| **东方财富 MCP** (cn-financial-mcp) | MCP | 42个 | 全品类：行情/财务/行业/宏观/新闻 | 新增 |
+| **东方财富 MCP** (cn-financial-mcp) | MCP/HTTP | 4端可用 | 龙虎榜/北向资金/涨停池/Sina日线 | 4/4端点可用 |
 | **腾讯接口** | HTTP | - | 实时行情/指数/大宗商品 | 运行中 |
 | **ftshare** | CLI | 公告/研报 | A股公告列表+PDF下载 | 运行中 |
+
+### 东财端点可用性（2026-06-01实测）
+
+| 端点 | 状态 | 响应 | 说明 |
+|------|------|------|------|
+| 龙虎榜 | ✅ | ~600ms | datacenter.eastmoney.com |
+| 北向资金 | ✅ | ~1000ms | HSGT历史数据 |
+| 涨停池 | ✅ | ~150ms | 当日涨停板 |
+| Sina日线行情 | ✅ | ~400ms | `stock_zh_a_daily`（非实时） |
+| push2实时行情 | ❌ | - | push2.eastmoney.com 被拒 |
+| EM资金流向 | ❌ | - | ConnectionError |
 | **WebSearch** | AI | - | 新闻/资讯兜底 | 运行中 |
 
 ---
