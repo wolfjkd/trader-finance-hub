@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/MCP-1.0-green.svg" alt="MCP"/>
   <img src="https://img.shields.io/badge/License-Apache--2.0-yellow.svg" alt="License"/>
   <img src="https://img.shields.io/badge/Data-A股|宏观|行业-red.svg" alt="Data Scope"/>
+  <img src="https://img.shields.io/badge/Analysis-四象限|熵共识|情绪时钟-orange.svg" alt="Analysis Models"/>
 </p>
 
 ---
@@ -34,6 +35,10 @@
 ├──────────┴──────────┴──────────┴──────────┴────────────────┤
 │              wolfjkd-trader-data 智能路由                    │
 │              多源择优 → 缓存 → 统一输出                       │
+├─────────────────────────────────────────────────────────────┤
+│              market_analyzer 全市场分析引擎                    │
+│   新闻聚合(4源) · 四象限模型 · 信息熵共识度 · 情绪时钟        │
+│   同花顺(THS)板块数据 · 综合报告生成                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -60,6 +65,39 @@
 | push2实时行情 | ❌ | - | push2.eastmoney.com 被拒 |
 | EM资金流向 | ❌ | - | ConnectionError |
 | **WebSearch** | AI | - | 新闻/资讯兜底 | 运行中 |
+
+---
+
+## 全市场综合分析引擎
+
+`src/market_analyzer.py` 提供全套智能化分析能力，可产出"全市场综合分析报告"。
+
+### 新闻聚合引擎
+- **4源聚合**: 东财头条 + 巨潮资讯 + 全球财经 + 央视新闻
+- **情感检测**: positive / negative / neutral 关键词自动标记
+- **影响度评分**: 0-100 分量化新闻对市场的影响程度
+
+### 同花顺数据方案
+- 基于 AKShare 内置 29 个 THS 函数，无需 Tushare Pro 高积分
+- 覆盖：概念板块行情 / 行业摘要 / 热门排名 / 市场总览
+
+### 分析模型
+
+| 模型 | 原理 | 输出 |
+|------|------|------|
+| **四象限** | 涨幅 x 共识强度 | I(强共识上涨)/II(弱共识上涨)/III(弱共识下跌)/IV(强共识下跌) |
+| **信息熵** | 香农熵量化市场分歧 | 高度共识 / 中度共识 / 分歧较大 / 高度分歧 |
+| **情绪时钟** | 4维度(涨跌/涨跌比/涨停跌停比/北向)评分 | 绝望/怀疑/希望/乐观/兴奋/贪婪 6阶段 |
+
+### CLI 命令
+
+```bash
+python src/market_analyzer.py health      # 数据源健康检测
+python src/market_analyzer.py news        # 市场要闻聚合
+python src/market_analyzer.py sector      # 板块四象限分析
+python src/market_analyzer.py sentiment   # 情绪时钟
+python src/market_analyzer.py report      # 全市场综合报告(JSON)
+```
 
 ---
 
@@ -144,7 +182,9 @@ buddy-finance-hub/
 │   ├── src/cn_financial_mcp/   # 42个金融工具
 │   ├── pyproject.toml
 │   └── .mcp.json
-├── data_router.py              # 多源智能路由（待合并）
+├── src/                        # 分析引擎
+│   ├── market_analyzer.py      # 全市场综合分析引擎（618行）
+│   └── __init__.py
 ├── config/                     # 配置文件
 │   └── mcp-servers.json        # MCP Server 配置
 ├── scripts/                    # 自动化脚本
@@ -160,6 +200,8 @@ buddy-finance-hub/
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
+| v0.3.0 | 2026-06-01 | 全市场综合分析引擎：NewsFetcher(4源新闻)+THSDataFetcher(同花顺替代)+MarketModels(四象限/熵共识/情绪时钟)；集成到 data_router v3.2 |
+| v0.2.0 | 2026-06-01 | 东财适配器重构：切换到 datacenter 端点(龙虎榜/北向/涨停池)+Sina兜底；端点可用性 4/4，评分 82/B |
 | v0.1.0 | 2026-06-01 | 项目初始化；集成 cn-financial-mcp (东财42工具)；架构设计 |
 
 ---
