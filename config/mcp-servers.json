@@ -1,0 +1,60 @@
+{
+  "version": "1.0",
+  "description": "Buddy 金融数据中枢 - MCP Server 配置",
+  "servers": {
+    "cn-financial": {
+      "name": "东方财富 MCP",
+      "type": "stdio",
+      "tools": 42,
+      "modules": ["company_info", "price_data", "financial_stmt", "valuation", "industry", "market", "news_events", "macro_fx"],
+      "source": "https://github.com/ccq1/cn-financial-mcp",
+      "note": "基于AKShare，东方财富→新浪/腾讯/同花顺自动fallback"
+    },
+    "tdx-connector": {
+      "name": "通达信 MCP",
+      "type": "http",
+      "modules": ["quotes", "kline", "screener", "notice", "report", "news"],
+      "source": "WorkBuddy connector-proxy"
+    },
+    "wind-mcp": {
+      "name": "Wind 万得 MCP",
+      "type": "CLI+MCP",
+      "server_types": ["stock_data", "global_stock_data", "fund_data", "index_data", "bond_data", "financial_docs", "economic_data", "analytics_data"],
+      "note": "有日调用额度，珍惜使用"
+    }
+  },
+  "routing": {
+    "realtime_quote": {
+      "primary": "tencent-http",
+      "fallback": ["tdx-connector", "cn-financial"]
+    },
+    "kline": {
+      "primary": "wind-mcp",
+      "fallback": ["cn-financial", "tdx-connector"]
+    },
+    "announcements": {
+      "primary": "ftshare",
+      "fallback": ["tdx-connector", "cn-financial"]
+    },
+    "financials": {
+      "primary": "wind-mcp",
+      "fallback": ["cn-financial"]
+    },
+    "industry_board": {
+      "primary": "cn-financial",
+      "fallback": ["wind-mcp"]
+    },
+    "macro": {
+      "primary": "cn-financial",
+      "fallback": ["wind-mcp"]
+    },
+    "dragon_tiger": {
+      "primary": "cn-financial",
+      "fallback": ["tdx-connector"]
+    },
+    "north_bound": {
+      "primary": "cn-financial",
+      "fallback": []
+    }
+  }
+}
