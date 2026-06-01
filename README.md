@@ -1,4 +1,4 @@
-# Buddy 金融数据中枢
+# Trader Finance Hub
 
 <p align="center">
   <strong>AI金融数据聚合平台</strong><br/>
@@ -106,8 +106,8 @@ python src/market_analyzer.py report      # 全市场综合报告(JSON)
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/wolfjkd/buddy-finance-hub.git
-cd buddy-finance-hub
+git clone https://github.com/wolfjkd/trader-finance-hub.git
+cd trader-finance-hub
 ```
 
 ### 2. 安装东财 MCP
@@ -176,7 +176,7 @@ python -c "from cn_financial_mcp.server import mcp; print('OK')"
 ## 项目结构
 
 ```
-buddy-finance-hub/
+trader-finance-hub/
 ├── README.md                   # 项目说明
 ├── cn-financial-mcp/           # 东方财富 MCP Server（子模块）
 │   ├── src/cn_financial_mcp/   # 42个金融工具

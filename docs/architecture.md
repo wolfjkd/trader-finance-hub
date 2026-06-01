@@ -89,6 +89,6 @@ data_router.py health → 检测存活数据源
 | WorkBuddy | `~/.workbuddy/` | AI Agent 主体 |
 | MCP Config | `~/.workbuddy/.mcp.json` | MCP Server 注册 |
 | 项目代码 | `~/.workbuddy/skills/wolfjkd-trader-data/` | 智能路由+Skill |
-| 东财 MCP | `buddy-finance-hub/cn-financial-mcp/` | 新增数据源 |
+| 东财 MCP | `trader-finance-hub/cn-financial-mcp/` | 新增数据源 |
 | Wind MCP | `~/.workbuddy/skills/wind-mcp-skill/` | Wind 金融数据 |
 | ftshare | `~/.workbuddy/skills/ftshare-announcement-data/` | 公告数据 |
