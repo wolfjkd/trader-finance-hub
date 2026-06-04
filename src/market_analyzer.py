@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-market_analyzer.py - 全市场综合分析引擎 v1.0
+market_analyzer.py - 全市场综合分析引擎 v2.0
 ============================================
 群友"全市场综合分析报告"框架的Python实现。
 
-三大模块:
+四大模块:
   1. NewsFetcher     — 财经新闻/公告/研报事件采集器
   2. THSDataFetcher  — 同花顺板块数据封装（AKShare后端）
   3. MarketModels    — 四象限分析/情绪时钟/信息熵共识度
+  4. EltdxAnalyzer   — eltdx独有数据分析（集合竞价/逐笔成交/F10资料）
 
 数据源矩阵:
   新闻: stock_news_em + stock_news_main_cx + stock_info_global_em + news_cctv
   板块: THS概念/行业名称+行情+成分 + EM概念成分
   资金: 东方财富datacenter端（龙虎榜/北向/涨停池）
-  行情: 腾讯接口（主力）+ Sina日线（兜底）
+  行情: 腾讯接口（主力）+ Sina日线（兜底）+ eltdx（独有数据）
 
 用法:
   python market_analyzer.py health          # 全链路健康检测
@@ -21,6 +22,9 @@ market_analyzer.py - 全市场综合分析引擎 v1.0
   python market_analyzer.py sector          # 板块四象限分析
   python market_analyzer.py sentiment       # 情绪时钟
   python market_analyzer.py report          # 生成综合分析报告(JSON)
+  python market_analyzer.py premarket       # 开盘前分析（eltdx独有）
+  python market_analyzer.py flow sz000001   # 资金流向分析（eltdx独有）
+  python market_analyzer.py screen 000001   # 个股筛选（eltdx独有）
 """
 
 import json
@@ -31,6 +35,13 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from typing import Any
+
+# eltdx数据提供者（可选依赖）
+try:
+    from eltdx_provider import EltdxProvider, AuctionData, TickData, F10Data
+    ELTDX_AVAILABLE = True
+except ImportError:
+    ELTDX_AVAILABLE = False
 
 # ============================================================
 # 模块1: 新闻事件采集器
@@ -740,6 +751,366 @@ class MarketModels:
 
 
 # ============================================================
+# 模块4: eltdx数据分析器（独有数据源）
+# ============================================================
+
+class EltdxAnalyzer:
+    """
+    eltdx数据分析器。
+    
+    基于通达信行情协议的独有数据源，提供：
+    - 开盘前分析（集合竞价数据）
+    - 资金流向增强（逐笔成交数据）
+    - 个股深度筛选（F10资料数据）
+    
+    使用示例：
+        with EltdxProvider() as provider:
+            analyzer = EltdxAnalyzer(provider)
+            
+            # 开盘前分析
+            pre_market = analyzer.analyze_pre_market(["sz000001", "sh600000"])
+            
+            # 资金流向分析
+            flow = analyzer.analyze_money_flow("sz000001", "20260604")
+            
+            # 个股筛选
+            screening = analyzer.screen_stocks(["000001", "600000"])
+    """
+    
+    NAME = "eltdx_analyzer"
+    
+    def __init__(self, provider):
+        """
+        初始化分析器。
+        
+        Args:
+            provider: EltdxProvider实例
+        """
+        self.provider = provider
+    
+    def analyze_pre_market(self, codes: list[str]) -> dict[str, Any]:
+        """
+        开盘前分析（基于集合竞价数据）。
+        
+        集合竞价发生在9:15-9:25，用于确定开盘价。
+        通过分析集合竞价数据，可以预判当日热点板块。
+        
+        Args:
+            codes: 股票代码列表，如 ['sz000001', 'sh600000']
+        
+        Returns:
+            {
+                "timestamp": str,
+                "stocks": {code: {...}},
+                "summary": {...}
+            }
+        """
+        results = {}
+        strong_open = []  # 强势开盘
+        weak_open = []    # 弱势开盘
+        
+        for code in codes:
+            auction = self.provider.get_auction(code)
+            
+            if auction.status != "success" or not auction.points:
+                results[code] = {
+                    "status": "no_data",
+                    "message": "无集合竞价数据"
+                }
+                continue
+            
+            # 分析竞价趋势
+            prices = [p.price for p in auction.points if p.price > 0]
+            volumes = [p.matched_volume for p in auction.points if p.matched_volume > 0]
+            
+            if not prices or not volumes:
+                results[code] = {
+                    "status": "insufficient_data",
+                    "message": "竞价数据不足"
+                }
+                continue
+            
+            # 计算竞价指标
+            open_price = prices[-1]
+            price_range = max(prices) - min(prices) if len(prices) > 1 else 0
+            price_volatility = price_range / open_price * 100 if open_price > 0 else 0
+            total_volume = sum(volumes)
+            avg_volume = total_volume / len(volumes) if volumes else 0
+            
+            # 判断开盘强度
+            # 强势开盘：价格稳定上升，成交量放大
+            is_strong = (
+                len(prices) >= 3 and
+                prices[-1] > prices[0] and  # 价格上升
+                price_volatility < 1.0 and  # 波动小
+                total_volume > 1000  # 成交量足够
+            )
+            
+            stock_result = {
+                "status": "success",
+                "open_price": open_price,
+                "price_range": price_range,
+                "price_volatility": round(price_volatility, 2),
+                "total_volume": total_volume,
+                "avg_volume": round(avg_volume, 0),
+                "data_points": len(auction.points),
+                "is_strong_open": is_strong,
+                "last_time": auction.points[-1].time_label if auction.points else ""
+            }
+            
+            results[code] = stock_result
+            
+            if is_strong:
+                strong_open.append(code)
+            else:
+                weak_open.append(code)
+        
+        # 汇总分析
+        summary = {
+            "total_stocks": len(codes),
+            "with_data": len([r for r in results.values() if r.get("status") == "success"]),
+            "strong_open": strong_open,
+            "weak_open": weak_open,
+            "strong_ratio": len(strong_open) / len(codes) * 100 if codes else 0
+        }
+        
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "stocks": results,
+            "summary": summary
+        }
+    
+    def analyze_money_flow(self, code: str, date: str) -> dict[str, Any]:
+        """
+        资金流向分析（基于逐笔成交数据）。
+        
+        通过分析逐笔成交的买卖方向，识别主力资金动向。
+        
+        Args:
+            code: 股票代码，如 'sz000001'
+            date: 日期，如 '20260604' 或 '2026-06-04'
+        
+        Returns:
+            {
+                "timestamp": str,
+                "code": str,
+                "date": str,
+                "flow_analysis": {...},
+                "signals": [...]
+            }
+        """
+        ticks = self.provider.get_ticks(code, date)
+        
+        if ticks.status != "success" or not ticks.ticks:
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "code": code,
+                "date": date,
+                "status": "no_data",
+                "message": "无逐笔成交数据"
+            }
+        
+        # 统计买卖力量
+        total_ticks = len(ticks.ticks)
+        buy_count = ticks.buy_count
+        sell_count = ticks.sell_count
+        
+        # 计算买卖金额
+        buy_amount = sum(t.amount for t in ticks.ticks if t.buy_or_sell == "buy")
+        sell_amount = sum(t.amount for t in ticks.ticks if t.buy_or_sell == "sell")
+        
+        # 计算净流入
+        net_inflow = buy_amount - sell_amount
+        
+        # 分析大单（假设>10万为大单）
+        BIG_ORDER_THRESHOLD = 100000  # 10万元
+        big_buy = [t for t in ticks.ticks if t.buy_or_sell == "buy" and t.amount >= BIG_ORDER_THRESHOLD]
+        big_sell = [t for t in ticks.ticks if t.buy_or_sell == "sell" and t.amount >= BIG_ORDER_THRESHOLD]
+        
+        big_buy_amount = sum(t.amount for t in big_buy)
+        big_sell_amount = sum(t.amount for t in big_sell)
+        big_net_inflow = big_buy_amount - big_sell_amount
+        
+        # 计算资金流向指标
+        buy_ratio = buy_count / total_ticks * 100 if total_ticks > 0 else 0
+        amount_ratio = buy_amount / (buy_amount + sell_amount) * 100 if (buy_amount + sell_amount) > 0 else 0
+        
+        # 生成信号
+        signals = []
+        
+        # 信号1：大单净流入
+        if big_net_inflow > 0:
+            signals.append({
+                "type": "big_order_inflow",
+                "description": f"大单净流入{big_net_inflow:,.0f}元",
+                "strength": "strong" if big_net_inflow > 500000 else "medium",
+                "implication": "主力资金积极买入"
+            })
+        elif big_net_inflow < 0:
+            signals.append({
+                "type": "big_order_outflow",
+                "description": f"大单净流出{abs(big_net_inflow):,.0f}元",
+                "strength": "strong" if abs(big_net_inflow) > 500000 else "medium",
+                "implication": "主力资金积极卖出"
+            })
+        
+        # 信号2：买卖力量对比
+        if buy_ratio > 60:
+            signals.append({
+                "type": "buy_dominant",
+                "description": f"买盘主导（{buy_ratio:.1f}%）",
+                "strength": "medium",
+                "implication": "市场看多情绪浓厚"
+            })
+        elif buy_ratio < 40:
+            signals.append({
+                "type": "sell_dominant",
+                "description": f"卖盘主导（{100-buy_ratio:.1f}%）",
+                "strength": "medium",
+                "implication": "市场看空情绪浓厚"
+            })
+        
+        # 信号3：成交活跃度
+        if total_ticks > 1000:
+            signals.append({
+                "type": "high_activity",
+                "description": f"成交活跃（{total_ticks}笔）",
+                "strength": "medium",
+                "implication": "市场关注度高"
+            })
+        
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "code": code,
+            "date": date,
+            "status": "success",
+            "flow_analysis": {
+                "total_ticks": total_ticks,
+                "buy_count": buy_count,
+                "sell_count": sell_count,
+                "buy_ratio": round(buy_ratio, 1),
+                "buy_amount": buy_amount,
+                "sell_amount": sell_amount,
+                "net_inflow": net_inflow,
+                "amount_ratio": round(amount_ratio, 1),
+                "big_buy_count": len(big_buy),
+                "big_sell_count": len(big_sell),
+                "big_buy_amount": big_buy_amount,
+                "big_sell_amount": big_sell_amount,
+                "big_net_inflow": big_net_inflow
+            },
+            "signals": signals
+        }
+    
+    def screen_stocks(self, codes: list[str]) -> dict[str, Any]:
+        """
+        个股筛选（基于F10资料数据）。
+        
+        通过分析F10资料，快速筛选具有投资价值的个股。
+        
+        Args:
+            codes: 股票代码列表，如 ['000001', '600000']
+        
+        Returns:
+            {
+                "timestamp": str,
+                "stocks": {code: {...}},
+                "summary": {...}
+            }
+        """
+        results = {}
+        high_score_stocks = []  # 高评分股票
+        
+        for code in codes:
+            f10 = self.provider.get_f10(code)
+            
+            if f10.status != "success":
+                results[code] = {
+                    "status": "error",
+                    "message": f10.error_message or "获取F10数据失败"
+                }
+                continue
+            
+            # 提取关键信息
+            profile = f10.profile
+            topics = f10.topics
+            finance = f10.finance
+            
+            # 计算综合评分
+            score = 0
+            score_details = []
+            
+            # 1. 行业评分（热门行业加分）
+            HOT_INDUSTRIES = ["半导体", "人工智能", "新能源", "生物医药", "军工"]
+            if profile and profile.industry:
+                for hot_ind in HOT_INDUSTRIES:
+                    if hot_ind in profile.industry:
+                        score += 20
+                        score_details.append(f"热门行业({profile.industry})")
+                        break
+            
+            # 2. 题材评分（题材数量加分）
+            if topics:
+                topic_score = min(len(topics) * 10, 30)
+                score += topic_score
+                score_details.append(f"题材数量({len(topics)}个)")
+            
+            # 3. 财务评分
+            if finance and finance.score:
+                try:
+                    finance_score = float(finance.score)
+                    if finance_score >= 80:
+                        score += 30
+                        score_details.append(f"财务优秀({finance_score}分)")
+                    elif finance_score >= 60:
+                        score += 20
+                        score_details.append(f"财务良好({finance_score}分)")
+                    elif finance_score >= 40:
+                        score += 10
+                        score_details.append(f"财务一般({finance_score}分)")
+                except ValueError:
+                    pass
+            
+            stock_result = {
+                "status": "success",
+                "company_name": profile.name if profile else "",
+                "industry": profile.industry if profile else "",
+                "list_date": profile.list_date if profile else "",
+                "main_business": profile.main_business[:50] if profile and profile.main_business else "",
+                "topics": [{"name": t.name, "reason": t.reason} for t in topics[:3]],
+                "finance_score": finance.score if finance else "",
+                "total_score": score,
+                "score_details": score_details
+            }
+            
+            results[code] = stock_result
+            
+            if score >= 50:
+                high_score_stocks.append({
+                    "code": code,
+                    "name": profile.name if profile else "",
+                    "score": score,
+                    "industry": profile.industry if profile else ""
+                })
+        
+        # 按评分排序
+        high_score_stocks.sort(key=lambda x: x["score"], reverse=True)
+        
+        summary = {
+            "total_stocks": len(codes),
+            "with_data": len([r for r in results.values() if r.get("status") == "success"]),
+            "high_score_count": len(high_score_stocks),
+            "top_stocks": high_score_stocks[:5]
+        }
+        
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "stocks": results,
+            "summary": summary
+        }
+
+
+# ============================================================
 # CLI 命令
 # ============================================================
 
@@ -757,7 +1128,7 @@ def cmd_health():
     print("=" * 60)
 
     # 1. 新闻检测
-    print("\n[1/4] 新闻采集器...")
+    print("\n[1/5] 新闻采集器...")
     try:
         headlines = NewsFetcher.fetch_headlines("600170")
         print(f"  [OK] 4源聚合: {len(headlines)}条头条新闻")
@@ -770,7 +1141,7 @@ def cmd_health():
         print(f"  [FAIL] {e}")
 
     # 2. THS数据检测
-    print("\n[2/4] 同花顺板块数据...")
+    print("\n[2/5] 同花顺板块数据...")
     try:
         concepts = THSDataFetcher.get_concept_list()
         industries = THSDataFetcher.get_industry_list()
@@ -787,7 +1158,7 @@ def cmd_health():
         print(f"  [FAIL] {e}")
 
     # 3. EM数据检测
-    print("\n[3/4] 东方财富特色数据...")
+    print("\n[3/5] 东方财富特色数据...")
     try:
         hot = THSDataFetcher.get_hot_rank()
         print(f"  [OK] 热门排名: {len(hot)}只")
@@ -803,8 +1174,26 @@ def cmd_health():
     except Exception as e:
         print(f"  [FAIL] {e}")
 
-    # 4. 分析模型检测
-    print("\n[4/4] 分析模型...")
+    # 4. eltdx数据检测
+    print("\n[4/5] eltdx通达信行情协议...")
+    if not ELTDX_AVAILABLE:
+        print("  [SKIP] eltdx库未安装")
+    else:
+        try:
+            with EltdxProvider() as provider:
+                health = provider.health_check()
+                status = health.get("status", "unknown")
+                latency = health.get("latency_ms", 0)
+                print(f"  [{'OK' if status == 'healthy' else 'FAIL'}] 状态: {status}, 延迟: {latency}ms")
+                for test_name, test_result in health.get("tests", {}).items():
+                    test_status = test_result.get("status", "unknown")
+                    test_latency = test_result.get("latency_ms", 0)
+                    print(f"    - {test_name}: {test_status} ({test_latency}ms)")
+        except Exception as e:
+            print(f"  [FAIL] {e}")
+
+    # 5. 分析模型检测
+    print("\n[5/5] 分析模型...")
     try:
         # 用模拟数据验证模型
         test_sectors = [
@@ -904,12 +1293,12 @@ def cmd_report():
     """生成综合分析报告JSON"""
     report = {
         "timestamp": datetime.now().isoformat(),
-        "version": "1.0",
+        "version": "2.0",
         "modules": {}
     }
 
     # 1. 新闻头条
-    print("[1/5] 采集新闻...")
+    print("[1/6] 采集新闻...")
     headlines = NewsFetcher.fetch_headlines()
     report["modules"]["news"] = {
         "count": len(headlines),
@@ -921,7 +1310,7 @@ def cmd_report():
     }
 
     # 2. 板块数据
-    print("[2/5] 获取板块数据...")
+    print("[2/6] 获取板块数据...")
     sectors = THSDataFetcher.get_concept_batch_quotes([], max_names=30)
     if sectors:
         quad = MarketModels.four_quadrant(sectors)
@@ -939,7 +1328,7 @@ def cmd_report():
         }
 
     # 3. 情绪时钟
-    print("[3/5] 计算情绪时钟...")
+    print("[3/6] 计算情绪时钟...")
     hot = THSDataFetcher.get_hot_rank()
     lt_up = sum(1 for h in hot if _safe_float(h.get("涨跌幅")) and _safe_float(h.get("涨跌幅")) >= 9.5)
     lt_down = sum(1 for h in hot if _safe_float(h.get("涨跌幅")) and _safe_float(h.get("涨跌幅")) <= -9.5)
@@ -958,15 +1347,45 @@ def cmd_report():
     report["modules"]["sentiment_clock"] = clock
 
     # 4. 热门股票
-    print("[4/5] 获取热门排名...")
+    print("[4/6] 获取热门排名...")
     report["modules"]["hot_rank"] = {
         "top30": hot[:30]
     }
 
     # 5. 概念摘要
-    print("[5/5] 获取概念摘要...")
+    print("[5/6] 获取概念摘要...")
     summary = THSDataFetcher.get_concept_summary()
     report["modules"]["concept_summary"] = summary[:20]
+
+    # 6. eltdx独有数据（可选）
+    print("[6/6] 获取eltdx独有数据...")
+    if ELTDX_AVAILABLE:
+        try:
+            with EltdxProvider() as provider:
+                analyzer = EltdxAnalyzer(provider)
+                
+                # 开盘前分析（集合竞价）
+                pre_market_codes = ["sz000001", "sh600000", "sz000002"]
+                pre_market = analyzer.analyze_pre_market(pre_market_codes)
+                report["modules"]["pre_market_analysis"] = pre_market
+                
+                # 资金流向分析（逐笔成交）
+                money_flow = analyzer.analyze_money_flow("sz000001", datetime.now().strftime("%Y%m%d"))
+                report["modules"]["money_flow_analysis"] = money_flow
+                
+                # 个股筛选（F10资料）
+                screening_codes = ["000001", "600000", "000002"]
+                screening = analyzer.screen_stocks(screening_codes)
+                report["modules"]["stock_screening"] = screening
+                
+                print(f"  [OK] 开盘前分析: {pre_market['summary']['with_data']}只股票")
+                print(f"  [OK] 资金流向: {money_flow.get('status', 'unknown')}")
+                print(f"  [OK] 个股筛选: {screening['summary']['high_score_count']}只高评分股票")
+        except Exception as e:
+            print(f"  [WARN] eltdx数据获取失败: {e}")
+            report["modules"]["eltdx_error"] = str(e)
+    else:
+        print("  [SKIP] eltdx库未安装")
 
     # 输出
     output_path = f"C:/Users/wolfj/WorkBuddy/Claw/reports/market_report_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
@@ -1004,6 +1423,48 @@ if __name__ == "__main__":
     elif args[0] in ("report", "报告"):
         cmd_report()
 
+    elif args[0] in ("premarket", "开盘前", "竞价"):
+        # 开盘前分析（集合竞价数据）
+        if not ELTDX_AVAILABLE:
+            print("❌ eltdx库未安装，请运行: pip install eltdx")
+            sys.exit(1)
+        codes = args[1:] if len(args) > 1 else ["sz000001", "sh600000", "sz000002"]
+        with EltdxProvider() as provider:
+            analyzer = EltdxAnalyzer(provider)
+            result = analyzer.analyze_pre_market(codes)
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args[0] in ("flow", "资金", "流向"):
+        # 资金流向分析（逐笔成交数据）
+        if not ELTDX_AVAILABLE:
+            print("❌ eltdx库未安装，请运行: pip install eltdx")
+            sys.exit(1)
+        code = args[1] if len(args) > 1 else "sz000001"
+        date = args[2] if len(args) > 2 else datetime.now().strftime("%Y%m%d")
+        with EltdxProvider() as provider:
+            analyzer = EltdxAnalyzer(provider)
+            result = analyzer.analyze_money_flow(code, date)
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args[0] in ("screen", "筛选", "选股"):
+        # 个股筛选（F10资料数据）
+        if not ELTDX_AVAILABLE:
+            print("❌ eltdx库未安装，请运行: pip install eltdx")
+            sys.exit(1)
+        codes = args[1:] if len(args) > 1 else ["000001", "600000", "000002"]
+        with EltdxProvider() as provider:
+            analyzer = EltdxAnalyzer(provider)
+            result = analyzer.screen_stocks(codes)
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
     else:
-        print(f"用法: python market_analyzer.py [health|news|sector|sentiment|report]")
+        print(f"用法: python market_analyzer.py [health|news|sector|sentiment|report|premarket|flow|screen]")
+        print(f"  health   - 全链路健康检测")
+        print(f"  news     - 今日财经要闻")
+        print(f"  sector   - 板块四象限分析")
+        print(f"  sentiment- 情绪时钟")
+        print(f"  report   - 综合分析报告JSON")
+        print(f"  premarket- 开盘前分析（eltdx独有）")
+        print(f"  flow     - 资金流向分析（eltdx独有）")
+        print(f"  screen   - 个股筛选（eltdx独有）")
         sys.exit(1)

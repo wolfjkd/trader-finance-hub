@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>AI金融数据聚合平台</strong><br/>
-  多源MCP数据聚合 · 智能路由 · 本地知识库 · 定时任务
+  多源MCP数据聚合 · 智能路由 · 本地知识库 · 定时任务 · 独有数据源
 </p>
 
 <p align="center">
@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/License-Apache--2.0-yellow.svg" alt="License"/>
   <img src="https://img.shields.io/badge/Data-A股|宏观|行业-red.svg" alt="Data Scope"/>
   <img src="https://img.shields.io/badge/Analysis-四象限|熵共识|情绪时钟-orange.svg" alt="Analysis Models"/>
+  <img src="https://img.shields.io/badge/eltdx-通达信协议-green.svg" alt="eltdx"/>
 </p>
 
 ---
@@ -19,27 +20,29 @@
 
 为 AI Agent（WorkBuddy / Claude Code / Cursor）提供**统一的A股金融数据接口**，聚合多源 MCP 数据服务，通过智能路由自动择优，确保数据的高可用和高质量。
 
+**独有数据源**：集成eltdx通达信行情协议，提供腾讯接口无法覆盖的**集合竞价、逐笔成交、F10资料**等独有数据。
+
 ---
 
 ## 架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    AI Agent (WorkBuddy)                      │
-├─────────────────────────────────────────────────────────────┤
-│                    统一 MCP 协议层                            │
-├──────────┬──────────┬──────────┬──────────┬────────────────┤
-│ 通达信MCP│ Wind MCP │ 东财 MCP │ 腾讯接口  │ 本地知识库      │
-│ 行情/K线  │ 深度财务  │ 42工具    │ 实时快照  │ SQLite+语义    │
-│ 公告/研报│ 技术指标  │ 财务/宏观 │ 毫秒级    │ 研报缓存       │
-├──────────┴──────────┴──────────┴──────────┴────────────────┤
-│              trader-data-router 智能路由                    │
-│              多源择优 → 缓存 → 统一输出                       │
-├─────────────────────────────────────────────────────────────┤
-│              market_analyzer 全市场分析引擎                    │
-│   新闻聚合(4源) · 四象限模型 · 信息熵共识度 · 情绪时钟        │
-│   同花顺(THS)板块数据 · 综合报告生成                          │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        AI Agent (WorkBuddy)                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                        统一 MCP 协议层                                    │
+├──────────┬──────────┬──────────┬──────────┬──────────┬────────────────┤
+│ 通达信MCP│ Wind MCP │ 东财 MCP │ 腾讯接口  │ eltdx    │ 本地知识库      │
+│ 行情/K线  │ 深度财务  │ 42工具    │ 实时快照  │ 独有数据  │ SQLite+语义    │
+│ 公告/研报│ 技术指标  │ 财务/宏观 │ 毫秒级    │ 竞价/逐笔 │ 研报缓存       │
+├──────────┴──────────┴──────────┴──────────┴──────────┴────────────────┤
+│                    trader-data-router 智能路由                            │
+│                    多源择优 → 主力源优先 → 缓存 → 统一输出                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                    market_analyzer 全市场分析引擎                          │
+│   新闻聚合(4源) · 四象限模型 · 信息熵共识度 · 情绪时钟                      │
+│   同花顺(THS)板块数据 · eltdx独有数据 · 综合报告生成                        │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -51,8 +54,19 @@
 | **通达信 MCP** (tdx-connector) | MCP | 6大模块 | 行情/公告/研报/新闻/K线/选股 | 运行中 |
 | **Wind MCP** (wind-mcp-skill) | MCP + CLI | 8个server | 深度财务/技术指标/板块/宏观 | 运行中 |
 | **东方财富 MCP** (cn-financial-mcp) | MCP/HTTP | 4端可用 | 龙虎榜/北向资金/涨停池/Sina日线 | 4/4端点可用 |
-| **腾讯接口** | HTTP | - | 实时行情/指数/大宗商品 | 运行中 |
+| **腾讯接口** | HTTP | - | 实时行情/指数/大宗商品（主力源） | 运行中 |
+| **eltdx** | Python | 5个接口 | 集合竞价/逐笔成交/F10资料/分时/K线 | 运行中（独有数据源） |
 | **ftshare** | CLI | 公告/研报 | A股公告列表+PDF下载 | 运行中 |
+
+### eltdx独有数据源（v2.0新增）
+
+| 数据类型 | 说明 | 腾讯接口 | eltdx | 延迟 |
+|----------|------|---------|-------|------|
+| **集合竞价** | 开盘前竞价撮合详情 | ❌ 无 | ✅ 有 | ~114ms |
+| **逐笔成交** | 每笔成交明细（时间/价格/量） | ❌ 无 | ✅ 有 | ~150ms |
+| **F10资料** | 公司概况/热点题材/财务诊断 | ❌ 无 | ✅ 有 | ~200ms |
+| 分时数据 | 分钟级行情 | ✅ 有 | ✅ 有 | ~126ms |
+| 行情快照 | 实时价格 | ✅ 有 | ✅ 有 | ~134ms |
 
 ### 东财端点可用性（2026-06-01实测）
 
@@ -81,6 +95,14 @@
 - 基于 AKShare 内置 29 个 THS 函数，无需 Tushare Pro 高积分
 - 覆盖：概念板块行情 / 行业摘要 / 热门排名 / 市场总览
 
+### eltdx独有数据分析（v2.0新增）
+
+| 分析模块 | 数据源 | 功能 | 输出 |
+|----------|--------|------|------|
+| **开盘前分析** | 集合竞价 | 预判当日热点板块 | 强势/弱势开盘股票列表 |
+| **资金流向分析** | 逐笔成交 | 识别主力资金动向 | 大单净流入/流出信号 |
+| **个股筛选** | F10资料 | 快速筛选投资价值 | 综合评分+行业/题材/财务 |
+
 ### 分析模型
 
 | 模型 | 原理 | 输出 |
@@ -97,6 +119,11 @@ python src/market_analyzer.py news        # 市场要闻聚合
 python src/market_analyzer.py sector      # 板块四象限分析
 python src/market_analyzer.py sentiment   # 情绪时钟
 python src/market_analyzer.py report      # 全市场综合报告(JSON)
+
+# eltdx独有数据分析（v2.0新增）
+python src/market_analyzer.py premarket   # 开盘前分析（集合竞价）
+python src/market_analyzer.py flow sz000001  # 资金流向分析（逐笔成交）
+python src/market_analyzer.py screen 000001  # 个股筛选（F10资料）
 ```
 
 ---
@@ -136,10 +163,18 @@ pip install -e .
 }
 ```
 
-### 4. 验证
+### 4. 安装eltdx（可选，独有数据源）
 
 ```bash
-python -c "from cn_financial_mcp.server import mcp; print('OK')"
+pip install eltdx
+```
+
+### 5. 验证
+
+```bash
+python -c "from cn_financial_mcp.server import mcp; print('东财MCP OK')"
+python -c "from eltdx import TdxClient; print('eltdx OK')"
+python src/market_analyzer.py health  # 全链路健康检测
 ```
 
 ---
@@ -163,7 +198,10 @@ python -c "from cn_financial_mcp.server import mcp; print('OK')"
 
 | 场景 | 首选 | 推荐理由 |
 |------|------|----------|
-| 实时行情快照 | 腾讯接口 | 毫秒级响应，无API限制 |
+| 实时行情快照 | **腾讯接口**【主力】 | 毫秒级响应，无API限制 |
+| 集合竞价数据 | **eltdx**【独有】 | 腾讯接口无此功能 |
+| 逐笔成交数据 | **eltdx**【独有】 | 腾讯接口无此功能 |
+| F10资料数据 | **eltdx**【独有】 | 腾讯接口无此功能 |
 | K线历史数据 | Wind MCP | 数据质量最高 |
 | 深度财务分析 | Wind MCP | 唯一全字段来源 |
 | 公告/研报 | ftshare + 通达信 | PDF下载+自然语言搜索 |
@@ -183,7 +221,8 @@ trader-finance-hub/
 │   ├── pyproject.toml
 │   └── .mcp.json
 ├── src/                        # 分析引擎
-│   ├── market_analyzer.py      # 全市场综合分析引擎（618行）
+│   ├── market_analyzer.py      # 全市场综合分析引擎（v2.0，含eltdx集成）
+│   ├── eltdx_provider.py       # eltdx数据提供者（独有数据源封装）
 │   └── __init__.py
 ├── config/                     # 配置文件
 │   └── mcp-servers.json        # MCP Server 配置
@@ -200,7 +239,8 @@ trader-finance-hub/
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
-| v0.3.0 | 2026-06-01 | 全市场综合分析引擎：NewsFetcher(4源新闻)+THSDataFetcher(同花顺替代)+MarketModels(四象限/熵共识/情绪时钟)；集成到 data_router v3.2 |
+| v2.0.0 | 2026-06-04 | **eltdx通达信协议集成**：新增 eltdx_provider.py（集合竞价/逐笔成交/F10资料3大独有数据源）；market_analyzer.py 新增 EltdxAnalyzer 模块（开盘前分析/资金流向/个股筛选）；全链路健康检测5模块通过 |
+| v1.0.0 | 2026-06-02 | 全市场综合分析引擎：NewsFetcher(4源新闻)+THSDataFetcher(同花顺替代)+MarketModels(四象限/熵共识/情绪时钟)；集成到 data_router v3.2 |
 | v0.2.0 | 2026-06-01 | 东财适配器重构：切换到 datacenter 端点(龙虎榜/北向/涨停池)+Sina兜底；端点可用性 4/4，评分 82/B |
 | v0.1.0 | 2026-06-01 | 项目初始化；集成 cn-financial-mcp (东财42工具)；架构设计 |
 
