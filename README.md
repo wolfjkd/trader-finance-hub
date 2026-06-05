@@ -16,6 +16,17 @@
 
 ---
 
+## 版本信息
+
+**当前版本**：v2.0.0
+
+**版本历史**：详见 [CHANGELOG.md](CHANGELOG.md)
+
+**版本号规则**：遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)（Semantic Versioning）
+- 主版本号：不兼容的 API 修改
+- 次版本号：向下兼容的功能性新增
+- 修订号：向下兼容的问题修正
+
 ## 项目定位
 
 为 AI Agent（WorkBuddy / Claude Code / Cursor）提供**统一的A股金融数据接口**，聚合多源 MCP 数据服务，通过智能路由自动择优，确保数据的高可用和高质量。
@@ -124,6 +135,24 @@ python src/market_analyzer.py report      # 全市场综合报告(JSON)
 python src/market_analyzer.py premarket   # 开盘前分析（集合竞价）
 python src/market_analyzer.py flow sz000001  # 资金流向分析（逐笔成交）
 python src/market_analyzer.py screen 000001  # 个股筛选（F10资料）
+```
+
+---
+
+## 项目结构
+
+```
+trader-finance-hub/
+├── README.md                 # 说明文档
+├── CHANGELOG.md              # 版本变更记录
+├── src/
+│   ├── __init__.py           # 包初始化，版本信息
+│   ├── market_analyzer.py    # 全市场综合分析引擎
+│   └── eltdx_provider.py     # eltdx数据源集成
+├── cn-financial-mcp/         # 东财MCP服务器
+├── config/                   # 配置文件
+├── docs/                     # 文档资料
+└── scripts/                  # 辅助脚本
 ```
 
 ---
