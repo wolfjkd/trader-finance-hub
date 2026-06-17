@@ -50,6 +50,11 @@ def register_all_tools():
 
     reg_macro(mcp)
 
+    # V0.5: eltdx 独有数据源（通达信私有协议，AKShare 没有）
+    from .tools.eltdx_data import register as reg_eltdx
+
+    reg_eltdx(mcp)
+
 
 # Register all tools at import time
 register_all_tools()
