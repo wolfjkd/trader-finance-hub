@@ -22,21 +22,21 @@ mcp = FastMCP(
 
 def register_all_tools():
     """Register all tool modules with the MCP server."""
-    # V0.1: Company info + Price data
+    # 公司信息 + 行情数据
     from .tools.company_info import register as reg_company
     from .tools.price_data import register as reg_price
 
     reg_company(mcp)
     reg_price(mcp)
 
-    # V0.2: Financial statements + Valuation
+    # 财务报表 + 估值
     from .tools.financial_stmt import register as reg_financial
     from .tools.valuation import register as reg_valuation
 
     reg_financial(mcp)
     reg_valuation(mcp)
 
-    # V0.3: Industry + Market + News
+    # 行业板块 + 市场总览 + 新闻公告
     from .tools.industry import register as reg_industry
     from .tools.market import register as reg_market
     from .tools.news_events import register as reg_news
@@ -45,15 +45,20 @@ def register_all_tools():
     reg_market(mcp)
     reg_news(mcp)
 
-    # V0.4: Macro & FX
+    # 宏观数据 + 外汇
     from .tools.macro_fx import register as reg_macro
 
     reg_macro(mcp)
 
-    # V0.5: eltdx 独有数据源（通达信私有协议，AKShare 没有）
+    # 通达信独有数据（集合竞价/逐笔成交/F10）
     from .tools.eltdx_data import register as reg_eltdx
 
     reg_eltdx(mcp)
+
+    # A股信号数据（涨停归因/解禁日历/概念归属/一致预期/技术指标）
+    from .tools.signal_data import register as reg_signal
+
+    reg_signal(mcp)
 
 
 # Register all tools at import time

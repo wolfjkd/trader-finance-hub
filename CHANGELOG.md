@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [2.1.0] - 2026-06-22
+
+### Added
+- 新增 `astock_signals/` 信号数据模块（5个文件），移植自 TradingAgents-astock 项目
+- `anti_ban_client.py` — 东方财富 HTTP 防封限流客户端（Session 复用 + 串行限流 + 随机抖动）
+- `hot_money.py` — 涨停归因接口（同花顺 editorial，含主题频次统计）
+- `lockup.py` — 限售解禁日历接口（东财 datacenter RPT_LIFT_STAGE，含风险提示）
+- `concept.py` — 个股概念/行业/地域板块归属（push2delay 镜像 + 地域板块反查策略）
+- `indicators.py` — 13种技术指标计算（MACD/RSI/Boll/ATR/KDJ/MFI 等，stockstats 引擎）
+- 新增 6 个 MCP 工具：`get_hot_stocks` / `get_lockup_expiry` / `get_concept_attribution` / `get_profit_forecast` / `get_technical_indicator` / `list_technical_indicators`
+- `get_profit_forecast` 支持分析师一致预期 EPS + Forward PE + PEG + PE 消化年限
+
+### Changed
+- `server.py` 注册 signal_data 工具模块（53 工具全部就绪）
+- 清理 `server.py` 中误导性的 V0.x 内部注释，改为中文功能描述
+
+### Fixed
+- `get_profit_forecast` 从 `pd.read_html`（JS 渲染 SPA 解析失败）改为正则精准匹配 `<thead>/<tbody>`
+
 ## [2.0.0] - 2026-06-01
 
 ### Added
