@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>AI金融数据聚合平台</strong><br/>
-  AKShare 封装 · eltdx 通达信协议 · 本地 MCP Server · 47 个工具
+  AKShare 封装 · eltdx 通达信协议 · 本地 MCP Server · 53 个工具
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/MCP-1.0-green.svg" alt="MCP"/>
   <img src="https://img.shields.io/badge/License-Apache--2.0-yellow.svg" alt="License"/>
   <img src="https://img.shields.io/badge/Data-A股-red.svg" alt="Data Scope"/>
-  <img src="https://img.shields.io/badge/Tools-47-orange.svg" alt="MCP Tools"/>
+  <img src="https://img.shields.io/badge/Tools-53-orange.svg" alt="MCP Tools"/>
 </p>
 
 ---
@@ -20,7 +20,7 @@
 为 AI Agent（WorkBuddy / Claude Code / Cursor）提供 **A 股金融数据的 MCP 接口**。
 
 **当前数据源**：
-- **AKShare**：42 个金融工具（财务/估值/行业/新闻/宏观）
+- **AKShare**：48 个金融工具（财务/估值/行业/新闻/宏观/信号）
 - **eltdx 1.0.2**：5 个通达信独有工具（集合竞价/逐笔/F10/分时/K线）
 
 **不吹牛**：这不是"多源智能路由"，就是两个数据源的 MCP 壳。  
@@ -53,9 +53,9 @@ AI Agent (WorkBuddy)
 
 ---
 
-## MCP 工具清单（47 个）
+## MCP 工具清单（53 个）
 
-### AKShare 封装（42 个）
+### AKShare 封装（48 个）
 
 | 类别 | 工具数 | 覆盖 |
 |------|--------|------|
@@ -67,6 +67,7 @@ AI Agent (WorkBuddy)
 | 市场总览 | 5 | 指数/资金流/北向/涨跌停/龙虎榜 |
 | 新闻公告 | 4 | 新闻/日历/公告/搜索 |
 | 宏观衍生 | 8 | GDP/CPI/PMI/M2/汇率/国债/两融 |
+| A股信号 | 6 | 涨停归因/解禁日历/概念归属/一致预期/技术指标 |
 
 ### eltdx 独有（5 个）
 
