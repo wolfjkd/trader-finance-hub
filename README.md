@@ -28,56 +28,139 @@
 
 ---
 
-## 实际架构
+## 项目架构
 
 ```
-AI Agent (WorkBuddy)
-        │
+AI Agent (WorkBuddy / Claude Code / Cursor)
+        │  MCP 协议 (stdio)
         ▼
-  cn-financial-mcp (stdio MCP)
+  cn-financial-mcp ── FastMCP Server
         │
-        ├── AKShare 封装（42 工具）
-        │     └─ 东财/新浪/腾讯后端
+        ├── AKShare 封装（48 工具）
+        │     ├── company_info    → 搜索/概况/竞品
+        │     ├── price_data      → 实时行情/历史K线/市值/列表
+        │     ├── financial_stmt  → 三表+财务指标+增长率+每股+分拆营收
+        │     ├── valuation       → PE/PB/PS历史/分红/机构持仓/分析师评级
+        │     ├── industry        → 行业板块/成分股/概念/板块资金流/行业PE
+        │     ├── market          → 指数快照/资金流/北向/涨跌停/龙虎榜
+        │     ├── news_events     → 个股新闻/财报日历/公告/关键词搜索
+        │     ├── macro_fx        → GDP/CPI/PMI/M2/汇率/国债/两融/增减持
+        │     └── signal_data     → 涨停归因/解禁日历/概念归属/一致预期/技术指标
+        │           └─ 数据源：东方财富 / 同花顺 / 新浪 / 腾讯 / 百度
         │
         └── eltdx 1.0.2 封装（5 工具）
-              └─ 通达信私有协议
+              ├── 集合竞价 (auction)    — AKShare 无此功能
+              ├── 逐笔成交 (ticks)      — AKShare 无此功能
+              ├── F10 资料 (f10)        — AKShare 无此功能
+              ├── 分时数据 (minutes)    — 与 AKShare 互补
+              └── K 线 (kline)          — 与 AKShare 互补
+                    └─ 数据源：通达信私有协议 (TCP 7709)
 ```
-
-**与 WorkBuddy 其他数据源的关系**：
-
-| 数据源 | 通道 | 本项目是否包含 |
-|--------|------|---------------|
-| cn-financial-mcp | mcp.json | ✅ 本项目 |
-| 通达信 connector (tdx-connector) | WorkBuddy connector | ❌ 外部，WorkBuddy 内置 |
-| Wind (wind-mcp-skill) | WorkBuddy skill | ❌ 外部，需 API Key |
-
----
 
 ## MCP 工具清单（53 个）
 
-### AKShare 封装（48 个）
+### 1. 公司信息（4 个）— `company_info`
 
-| 类别 | 工具数 | 覆盖 |
-|------|--------|------|
-| 公司信息 | 4 | 搜索/概况/竞品 |
-| 行情数据 | 4 | 实时/历史K线/市值/列表 |
-| 财务报表 | 8 | 三表+指标+增长率+每股 |
-| 估值分析 | 4 | PE/PB/分红/机构持仓/评级 |
-| 行业板块 | 5 | 板块/成分股/概念/资金流 |
-| 市场总览 | 5 | 指数/资金流/北向/涨跌停/龙虎榜 |
-| 新闻公告 | 4 | 新闻/日历/公告/搜索 |
-| 宏观衍生 | 8 | GDP/CPI/PMI/M2/汇率/国债/两融 |
-| A股信号 | 6 | 涨停归因/解禁日历/概念归属/一致预期/技术指标 |
+| 工具名 | 功能 |
+|--------|------|
+| `search_stock` | 搜索A股股票，支持名称或代码模糊匹配 |
+| `get_company_info` | 公司基本信息：行业、市值、股本、上市日期 |
+| `get_company_profile` | 主营业务构成与业务描述 |
+| `get_competitors` | 同行业公司列表（竞争对手/可比公司） |
 
-### eltdx 独有（5 个）
+### 2. 行情数据（4 个）— `price_data`
 
-| 工具 | 延迟 | AKShare 是否有 |
-|------|------|---------------|
-| `eltdx_get_auction` 集合竞价 | ~40ms | ❌ 没有 |
-| `eltdx_get_ticks` 逐笔成交 | ~45ms | ❌ 没有 |
-| `eltdx_get_f10` F10资料（含题材归因） | ~2200ms | ❌ 没有 |
-| `eltdx_get_minutes` 分时 | ~40ms | ⚠️ 有但源不同 |
-| `eltdx_get_kline` K线 | ~80ms | ⚠️ 有但源不同 |
+| 工具名 | 功能 |
+|--------|------|
+| `get_realtime_quote` | 实时行情：最新价/涨跌幅/量/换手率/PE/PB |
+| `get_historical_price` | 历史K线（日/周/月，前复权/后复权/不复权） |
+| `get_market_capitalization` | 总市值与流通市值 |
+| `get_stock_list` | A股全列表，支持按市值筛选 |
+
+### 3. 财务报表（8 个）— `financial_stmt`
+
+| 工具名 | 功能 |
+|--------|------|
+| `get_income_statement` | 利润表（按季度，默认8期） |
+| `get_balance_sheet` | 资产负债表（按季度，默认8期） |
+| `get_cash_flow_statement` | 现金流量表（按季度，默认8期） |
+| `get_financial_line_item` | 从三表中提取特定科目时间序列（如"营业总收入"） |
+| `get_financial_indicators` | ROE/毛利率/净利率/资产负债率等多维度指标 |
+| `get_growth_rates` | 营收增长率/净利润增长率等成长性指标 |
+| `get_per_share_data` | 每股指标：EPS / BPS / CFPS |
+| `get_segments_revenue` | 主营构成：按产品/地区分拆营收与毛利率 |
+
+### 4. 估值分析（4 个）— `valuation`
+
+| 工具名 | 功能 |
+|--------|------|
+| `get_valuation_metrics` | PE/PB/PS 历史时间序列（默认100交易日） |
+| `get_dividend_data` | 历史分红派息：每股派息/除权日/登记日 |
+| `get_institutional_holdings` | 十大流通股东/机构持股变动 |
+| `get_analyst_rating` | 分析师评级/目标价/预测EPS |
+
+### 5. 行业板块（5 个）— `industry`
+
+| 工具名 | 功能 |
+|--------|------|
+| `get_industry_list` | 行业板块列表（涨跌幅/领涨股） |
+| `get_industry_stocks` | 指定行业所有成分股 |
+| `get_concept_list` | 概念板块列表（华为/ChatGPT/芯片等） |
+| `get_sector_fund_flow` | 板块资金流向排名（行业/概念/地域，今日/5日/10日） |
+| `get_industry_pe` | 行业板块历史行情（可用于行业PE估值趋势） |
+
+### 6. 市场总览（5 个）— `market`
+
+| 工具名 | 功能 |
+|--------|------|
+| `get_market_overview` | 主要指数实时快照（上证/深证/创业板/科创50/沪深300） |
+| `get_money_flow` | 个股资金流向：主力/超大单/大单/中单/小单 |
+| `get_north_bound_flow` | 北向资金净流入（沪股通+深股通） |
+| `get_limit_up_down` | 当日涨停/跌停股票池（封单额/连板天数） |
+| `get_dragon_tiger` | 龙虎榜：机构与游资买卖席位 |
+
+### 7. 新闻公告（4 个）— `news_events`
+
+| 工具名 | 功能 |
+|--------|------|
+| `get_stock_news` | 个股相关新闻资讯 |
+| `get_financial_calendar` | 财报披露时间表 |
+| `get_company_announcements` | 上市公司公告 |
+| `search_news` | 按关键词搜索新闻（可限定个股范围） |
+
+### 8. 宏观衍生（8 个）— `macro_fx`
+
+| 工具名 | 功能 |
+|--------|------|
+| `get_macro_gdp` | 中国GDP（季度，含三次产业） |
+| `get_macro_cpi` | CPI消费者价格指数（月度，同比/环比） |
+| `get_macro_pmi` | PMI采购经理指数（制造业/非制造业/分项） |
+| `get_macro_money_supply` | M0/M1/M2 货币供应量（月度，同比增速） |
+| `get_fx_rate` | 外汇汇率（美元/欧元/英镑/日元/港币兑人民币） |
+| `get_bond_yield_curve` | 国债收益率曲线（1/3/5/7/10/30年） |
+| `get_margin_trading` | 融资融券余额（市场汇总/个股） |
+| `get_insider_trading` | 股东/高管增减持（内部交易） |
+
+### 9. A股信号（6 个）— `signal_data` 🆕
+
+| 工具名 | 功能 | 数据源 |
+|--------|------|--------|
+| `get_hot_stocks` | 涨停股票+人工标注的主题归因 | 同花顺 editorial |
+| `get_lockup_expiry` | 限售解禁日历（历史+未来90天） | 东方财富 datacenter |
+| `get_concept_attribution` | 概念/行业/地域板块归属 | 东方财富 / 百度 |
+| `get_profit_forecast` | 分析师一致预期EPS + Forward PE/PEG | 同花顺 |
+| `get_technical_indicator` | 13种技术指标（MACD/RSI/布林带/ATR等） | AKShare + stockstats |
+| `list_technical_indicators` | 列出所有支持的技术指标及说明 | — |
+
+### 10. eltdx 通达信独有（5 个）— `eltdx_data`
+
+| 工具名 | 功能 | 延迟 | AKShare 是否有 |
+|--------|------|------|---------------|
+| `eltdx_get_auction` | 集合竞价（9:15-9:25撮合过程） | ~40ms | ❌ 没有 |
+| `eltdx_get_ticks` | 逐笔成交（价格/量/买卖方向） | ~45ms | ❌ 没有 |
+| `eltdx_get_f10` | F10资料（公司概况/题材归因/财务诊断） | ~2200ms | ❌ 没有 |
+| `eltdx_get_minutes` | 分时数据（1分钟K线） | ~40ms | ⚠️ 有但源不同 |
+| `eltdx_get_kline` | K线（日/周/月/5m/15m/30m/60m） | ~80ms | ⚠️ 有但源不同 |
 
 ---
 
