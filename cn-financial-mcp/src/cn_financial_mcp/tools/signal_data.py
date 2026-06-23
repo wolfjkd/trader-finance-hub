@@ -1,8 +1,8 @@
 """
-Category 9: Signal Data — A-stock specific signal/event tools (V0.6).
+Category 9: Signal Data — A-stock specific signal/event tools (V0.7).
 
 TradingAgents-astock 移植层，补齐 Hub 在涨停归因、解禁日历、概念归属、
-一致预期、技术指标 5 个维度的数据短板。
+一致预期、技术指标、北向资金、个股资金流、龙虎榜、行业对比 9 个维度的数据短板。
 
 Tools:
   43. get_hot_stocks           - 涨停股票+主题归因（同花顺 editorial）
@@ -10,6 +10,10 @@ Tools:
   45. get_concept_attribution  - 个股概念板块归属（东财→百度PAE fallback）
   46. get_profit_forecast      - 一致预期EPS/Forward PE/PEG（同花顺）
   47. get_technical_indicator  - 技术指标计算 MACD/RSI/Boll（stockstats）
+  48. get_northbound_flow      - 北向资金流向（同花顺 hsgtApi，astock_signals）
+  49. get_fund_flow_signal     - 个股资金流向（东财 push2，astock_signals）
+  50. get_dragon_tiger_signal  - 龙虎榜席位明细（东财 datacenter，astock_signals）
+  51. get_industry_comparison  - 行业横向对比排名（东财 push2，astock_signals）
 """
 
 from __future__ import annotations
@@ -41,6 +45,10 @@ from astock_signals import (  # noqa: E402
     get_indicators_text,
     get_supported_indicators,
     get_indicator_description,
+    get_northbound_flow_json,
+    get_fund_flow_json,
+    get_dragon_tiger_board_json,
+    get_industry_comparison_json,
 )
 
 
@@ -416,3 +424,152 @@ def register(mcp: FastMCP):
                 "description": get_indicator_description(name),
             })
         return dict_to_json(result)
+
+    # ----------------------------------------------------------------
+    # V0.7: 4 new tools from astock_signals (northbound/fund_flow/
+    #       dragon_tiger/industry) — TradingAgents-astock 移植
+    # ----------------------------------------------------------------
+
+    @mcp.tool()
+    async def get_northbound_flow_signal(
+        curr_date: str = "",
+        include_history: bool = False,
+    ) -> str:
+        """
+        获取北向资金流向（沪深股通）。
+
+        数据源：同花顺 hsgtApi，提供实时分钟级沪股通+深股通累计净买入。
+        附带本地缓存的历史每日收盘数据（最多20个交易日）。
+
+        Args:
+            curr_date: 日期 YYYY-MM-DD，空字符串默认今天。
+            include_history: 是否包含历史每日数据（最近20个交易日）。
+
+        Returns:
+            北向资金数据 (JSON)，含实时数据点、收盘净流入、多空信号、历史数据。
+        """
+        cache_key = f"northbound:{curr_date or 'today'}:{include_history}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = get_northbound_flow_json(curr_date, include_history)
+            output = dict_to_json(result)
+            if result.get("realtime"):
+                cache.set(cache_key, output, TTL_REALTIME)
+            return output
+        except Exception as e:
+            return error_response(
+                f"获取北向资金数据失败: {e}", "get_northbound_flow_signal"
+            )
+
+    @mcp.tool()
+    async def get_fund_flow_signal(
+        symbol: str,
+        curr_date: str = "",
+        include_history: bool = True,
+    ) -> str:
+        """
+        获取个股资金流向（主力/大单/中单/小单/超大单净流入）。
+
+        数据源：东财 push2（实时分钟级）+ push2his（历史日线20天）。
+        可作为 AKShare 版 get_money_flow 的备用数据源。
+
+        Args:
+            symbol: 6位股票代码，如 "600519"。
+            curr_date: 日期 YYYY-MM-DD，空字符串默认今天。
+            include_history: 是否包含历史每日资金流（最近20个交易日）。
+
+        Returns:
+            资金流向数据 (JSON)，含实时分钟级数据、历史日线、多空信号。
+        """
+        symbol = normalize_symbol(symbol)
+        cache_key = f"fund_flow_signal:{symbol}:{curr_date or 'today'}:{include_history}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = get_fund_flow_json(symbol, curr_date, include_history)
+            output = dict_to_json(result)
+            if result.get("realtime"):
+                cache.set(cache_key, output, TTL_REALTIME)
+            return output
+        except Exception as e:
+            return error_response(
+                f"获取个股资金流向失败: {e}", "get_fund_flow_signal"
+            )
+
+    @mcp.tool()
+    async def get_dragon_tiger_signal(
+        symbol: str,
+        trade_date: str = "",
+        look_back_days: int = 30,
+    ) -> str:
+        """
+        获取个股龙虎榜数据（上榜记录 + 买卖席位 + 机构动向）。
+
+        数据源：东财 datacenter-web（直连，不依赖 AKShare）。
+        可作为 AKShare 版 get_dragon_tiger 的备用数据源。
+
+        Args:
+            symbol: 6位股票代码，如 "000858"。
+            trade_date: 参考日期 YYYY-MM-DD，空字符串默认今天。
+            look_back_days: 向前查询天数，默认30天。
+
+        Returns:
+            龙虎榜数据 (JSON)，含上榜记录、买卖席位TOP5、机构动向。
+        """
+        symbol = normalize_symbol(symbol)
+        cache_key = f"dragon_tiger_signal:{symbol}:{trade_date or 'today'}:{look_back_days}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = get_dragon_tiger_board_json(symbol, trade_date, look_back_days)
+            output = dict_to_json(result)
+            cache.set(cache_key, output, TTL_DAILY)
+            return output
+        except Exception as e:
+            return error_response(
+                f"获取龙虎榜数据失败: {e}", "get_dragon_tiger_signal"
+            )
+
+    @mcp.tool()
+    async def get_industry_comparison_signal(
+        symbol: str = "",
+        trade_date: str = "",
+        top_n: int = 20,
+    ) -> str:
+        """
+        获取行业横向对比排名（全行业涨跌幅/上涨下跌家数/领涨股）。
+
+        数据源：东财 push2 行业板块排名（直连，不依赖 AKShare）。
+
+        Args:
+            symbol: 6位股票代码（可选，用于定位所属行业）。
+            trade_date: 日期 YYYY-MM-DD，空字符串默认今天。
+            top_n: 显示前/后N个行业，默认20。
+
+        Returns:
+            行业排名数据 (JSON)，含行业名称/涨跌幅/上涨下跌家数/领涨股。
+        """
+        if symbol:
+            symbol = normalize_symbol(symbol)
+        cache_key = f"industry_cmp:{symbol or 'all'}:{trade_date or 'today'}:{top_n}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = get_industry_comparison_json(symbol, trade_date, top_n)
+            output = dict_to_json(result)
+            if result.get("industries"):
+                cache.set(cache_key, output, TTL_DAILY)
+            return output
+        except Exception as e:
+            return error_response(
+                f"获取行业对比数据失败: {e}", "get_industry_comparison_signal"
+            )

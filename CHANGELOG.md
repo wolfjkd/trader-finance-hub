@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [2.2.0] - 2026-06-23
+
+### Added
+- 新增 `astock_signals/northbound.py` — 北向资金流向模块（同花顺 hsgtApi，含本地 CSV 缓存历史）
+- 新增 `astock_signals/fund_flow.py` — 个股资金流向模块（东财 push2 实时 + push2his 历史 20 天）
+- 新增 `astock_signals/dragon_tiger.py` — 龙虎榜席位明细模块（东财 datacenter，含机构动向）
+- 新增 `astock_signals/industry.py` — 行业横向对比模块（东财 push2 行业排名）
+- 新增 4 个 MCP 工具：`get_northbound_flow_signal` / `get_fund_flow_signal` / `get_dragon_tiger_signal` / `get_industry_comparison_signal`
+- 所有新模块均提供 `_json` 版本返回结构化 dict，供 MCP 工具和 CLI 共用
+
+### Changed
+- `astock_signals/__init__.py` 版本升至 0.2.0，导出 9 个模块（原 5 → 现 9）
+- `signal_data.py` 版本升至 V0.7，工具数从 6 增至 10
+- `cn-financial-mcp` 版本升至 2.2.0，MCP 工具总数 53 → 57
+- README 更新工具清单和版本历史
+
+### Architecture
+- 一主一备架构落地：AKShare 版 money_flow / north_bound / dragon_tiger 为主力源，astock_signals 东财直连为备用源
+- 新模块复用 `anti_ban_client` 的 `em_get` / `em_datacenter` / `em_push2_fund_flow` / `em_push2his_fund_flow`，统一封控
+
 ## [2.1.0] - 2026-06-22
 
 ### Added
