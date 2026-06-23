@@ -45,7 +45,7 @@ AI Agent (WorkBuddy / Claude Code / Cursor)
         │     ├── market          → 指数快照/资金流/北向/涨跌停/龙虎榜
         │     ├── news_events     → 个股新闻/财报日历/公告/关键词搜索
         │     ├── macro_fx        → GDP/CPI/PMI/M2/汇率/国债/两融/增减持
-        │     └── signal_data     → 涨停归因/解禁日历/概念归属/一致预期/技术指标
+        │     └── signal_data     → 涨停归因/解禁日历/概念归属/一致预期/技术指标/ETF/可转债
         │           └─ 数据源：东方财富 / 同花顺 / 新浪 / 腾讯 / 百度
         │
         └── eltdx 1.0.2 封装（5 工具）
@@ -141,7 +141,7 @@ AI Agent (WorkBuddy / Claude Code / Cursor)
 | `get_margin_trading` | 融资融券余额（市场汇总/个股） |
 | `get_insider_trading` | 股东/高管增减持（内部交易） |
 
-### 9. A股信号（10 个）— `signal_data`
+### 9. A股信号+品种（14 个）— `signal_data`
 
 | 工具名 | 功能 | 数据源 |
 |--------|------|--------|
@@ -151,10 +151,14 @@ AI Agent (WorkBuddy / Claude Code / Cursor)
 | `get_profit_forecast` | 分析师一致预期EPS + Forward PE/PEG | 同花顺 |
 | `get_technical_indicator` | 13种技术指标（MACD/RSI/布林带/ATR等） | AKShare + stockstats |
 | `list_technical_indicators` | 列出所有支持的技术指标及说明 | — |
-| `get_northbound_flow_signal` 🆕 | 北向资金流向（沪深股通） | 同花顺 hsgtApi |
-| `get_fund_flow_signal` 🆕 | 个股资金流向（主力/大中小单） | 东财 push2 |
-| `get_dragon_tiger_signal` 🆕 | 龙虎榜席位明细+机构动向 | 东财 datacenter |
-| `get_industry_comparison_signal` 🆕 | 行业横向对比排名 | 东财 push2 |
+| `get_northbound_flow_signal` | 北向资金流向（沪深股通） | 同花顺 hsgtApi |
+| `get_fund_flow_signal` | 个股资金流向（主力/大中小单） | 东财 push2 |
+| `get_dragon_tiger_signal` | 龙虎榜席位明细+机构动向 | 东财 datacenter |
+| `get_industry_comparison_signal` | 行业横向对比排名 | 东财 push2 |
+| `get_etf_realtime_data` 🆕 | ETF实时行情（IOPV/折价率/换手率） | AKShare fund_etf_spot_em |
+| `get_etf_kline_data` 🆕 | ETF历史K线（日/周/月，支持复权） | AKShare fund_etf_hist_em |
+| `get_cb_realtime_data` 🆕 | 可转债实时行情（溢价率/转股价/评级） | AKShare bond_zh_cov |
+| `get_cb_value_analysis_data` 🆕 | 可转债价值分析（溢价率历史曲线） | AKShare bond_zh_cov_value_analysis |
 
 ### 10. eltdx 通达信独有（5 个）— `eltdx_data`
 

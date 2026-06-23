@@ -1,8 +1,10 @@
 """
-Category 9: Signal Data — A-stock specific signal/event tools (V0.7).
+Category 9: Signal Data — A-stock signal/event tools (V0.8).
 
-TradingAgents-astock 移植层，补齐 Hub 在涨停归因、解禁日历、概念归属、
-一致预期、技术指标、北向资金、个股资金流、龙虎榜、行业对比 9 个维度的数据短板。
+TradingAgents-astock 移植层 + 品种扩展层。
+补齐 Hub 在涨停归因、解禁日历、概念归属、一致预期、技术指标、
+北向资金、个股资金流、龙虎榜、行业对比 9 个维度的数据短板。
+V0.8 新增 ETF 和可转债 2 个品种的数据接口。
 
 Tools:
   43. get_hot_stocks           - 涨停股票+主题归因（同花顺 editorial）
@@ -14,6 +16,13 @@ Tools:
   49. get_fund_flow_signal     - 个股资金流向（东财 push2，astock_signals）
   50. get_dragon_tiger_signal  - 龙虎榜席位明细（东财 datacenter，astock_signals）
   51. get_industry_comparison  - 行业横向对比排名（东财 push2，astock_signals）
+  52. get_etf_realtime_data    - ETF实时行情（AKShare fund_etf_spot_em）
+  53. get_etf_kline_data       - ETF历史K线（AKShare fund_etf_hist_em）
+  54. get_cb_realtime_data     - 可转债实时行情（AKShare bond_zh_cov）
+  55. get_cb_value_analysis_data - 可转债价值分析/转股溢价率（AKShare bond_zh_cov_value_analysis）
+
+  Total: 14 tools in signal_data.py, 57 tools overall in cn-financial-mcp.
+"""
 """
 
 from __future__ import annotations
@@ -49,6 +58,10 @@ from astock_signals import (  # noqa: E402
     get_fund_flow_json,
     get_dragon_tiger_board_json,
     get_industry_comparison_json,
+    get_etf_realtime_json,
+    get_etf_kline_json,
+    get_cb_realtime_json,
+    get_cb_value_analysis_json,
 )
 
 
@@ -572,4 +585,150 @@ def register(mcp: FastMCP):
         except Exception as e:
             return error_response(
                 f"获取行业对比数据失败: {e}", "get_industry_comparison_signal"
+            )
+
+    # ----------------------------------------------------------------
+    # V0.8: 品种扩展 — ETF + 可转债
+    # ----------------------------------------------------------------
+
+    @mcp.tool()
+    async def get_etf_realtime_data(
+        top_n: int = 50,
+        sort_by: str = "成交额",
+    ) -> str:
+        """
+        获取ETF实时行情（全部ETF按成交额/涨跌幅排序）。
+
+        数据源：AKShare fund_etf_spot_em（东方财富）。
+        提供 IOPV估值、折价率、换手率等ETF特有字段。
+
+        Args:
+            top_n: 返回前N只ETF，默认50。
+            sort_by: 排序字段，默认成交额，可选涨跌幅。
+
+        Returns:
+            ETF实时行情 (JSON)，含代码/名称/价格/涨跌幅/IOPV/成交额。
+        """
+        cache_key = f"etf_realtime:{top_n}:{sort_by}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = get_etf_realtime_json(top_n, sort_by)
+            output = dict_to_json(result)
+            if result.get("etfs"):
+                cache.set(cache_key, output, TTL_REALTIME)
+            return output
+        except Exception as e:
+            return error_response(
+                f"获取ETF实时行情失败: {e}", "get_etf_realtime_data"
+            )
+
+    @mcp.tool()
+    async def get_etf_kline_data(
+        symbol: str,
+        period: str = "daily",
+        start_date: str = "",
+        end_date: str = "",
+        adjust: str = "",
+    ) -> str:
+        """
+        获取ETF历史K线数据。
+
+        数据源：AKShare fund_etf_hist_em（东方财富）。
+        支持日/周/月线，可选前复权/后复权/不复权。
+
+        Args:
+            symbol: ETF代码，如 "513500"。
+            period: K线周期 daily/weekly/monthly，默认daily。
+            start_date: 开始日期 YYYYMMDD，默认近1年。
+            end_date: 结束日期 YYYYMMDD，默认今天。
+            adjust: 复权方式（''不复权/'qfq'前复权/'hfq'后复权）。
+
+        Returns:
+            ETF K线数据 (JSON)，含日期/开高低收/成交量/成交额/涨跌幅。
+        """
+        cache_key = f"etf_kline:{symbol}:{period}:{start_date}:{end_date}:{adjust}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = get_etf_kline_json(symbol, period, start_date, end_date, adjust)
+            output = dict_to_json(result)
+            if result.get("klines"):
+                cache.set(cache_key, output, TTL_DAILY)
+            return output
+        except Exception as e:
+            return error_response(
+                f"获取ETF K线失败: {e}", "get_etf_kline_data"
+            )
+
+    @mcp.tool()
+    async def get_cb_realtime_data(
+        top_n: int = 50,
+        sort_by: str = "成交额",
+    ) -> str:
+        """
+        获取可转债实时行情（全部可转债含转股溢价率）。
+
+        数据源：AKShare bond_zh_cov（东方财富）。
+        提供正股价/转股价/转股价值/转股溢价率/信用评级等可转债特有字段。
+
+        Args:
+            top_n: 返回前N只可转债，默认50。
+            sort_by: 排序字段，默认成交额，可选转股溢价率。
+
+        Returns:
+            可转债实时行情 (JSON)，含代码/价格/正股价/转股价/溢价率/评级。
+        """
+        cache_key = f"cb_realtime:{top_n}:{sort_by}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = get_cb_realtime_json(top_n, sort_by)
+            output = dict_to_json(result)
+            if result.get("bonds"):
+                cache.set(cache_key, output, TTL_REALTIME)
+            return output
+        except Exception as e:
+            return error_response(
+                f"获取可转债行情失败: {e}", "get_cb_realtime_data"
+            )
+
+    @mcp.tool()
+    async def get_cb_value_analysis_data(
+        symbol: str,
+        days: int = 30,
+    ) -> str:
+        """
+        获取可转债价值分析（历史转股溢价率/纯债价值/纯债溢价率曲线）。
+
+        数据源：AKShare bond_zh_cov_value_analysis（东方财富）。
+        用于分析可转债估值区间、溢价率趋势。
+
+        Args:
+            symbol: 可转债代码，如 "113527"。
+            days: 返回最近N天数据，默认30天。
+
+        Returns:
+            可转债价值分析 (JSON)，含日期/收盘价/纯债价值/转股价值/溢价率。
+        """
+        cache_key = f"cb_value:{symbol}:{days}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = get_cb_value_analysis_json(symbol, days)
+            output = dict_to_json(result)
+            if result.get("history"):
+                cache.set(cache_key, output, TTL_DAILY)
+            return output
+        except Exception as e:
+            return error_response(
+                f"获取可转债价值分析失败: {e}", "get_cb_value_analysis_data"
             )

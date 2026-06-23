@@ -12,7 +12,12 @@ TradingAgents-astock 移植层。提供以下核心能力:
   - dragon_tiger:     龙虎榜席位明细（东财 datacenter）
   - industry:         行业横向对比（东财 push2 行业排名）
 
-V0.2 — 新增 northbound / fund_flow / dragon_tiger / industry 4 个模块。
+V0.3 — 新增 ETF / 可转债 2 个品种模块。
+
+模块清单（11个）:
+  - anti_ban_client / lockup / hot_money / concept / indicators
+  - northbound / fund_flow / dragon_tiger / industry  (V0.2)
+  - etf / convertible_bond  (V0.3 新品种)
 """
 
 from .anti_ban_client import (
@@ -38,6 +43,8 @@ from .northbound import get_northbound_flow, get_northbound_flow_json
 from .fund_flow import get_fund_flow, get_fund_flow_json
 from .dragon_tiger import get_dragon_tiger_board, get_dragon_tiger_board_json
 from .industry import get_industry_comparison, get_industry_comparison_json
+from .etf import get_etf_realtime, get_etf_realtime_json, get_etf_kline, get_etf_kline_json, get_etf_list, get_etf_list_json
+from .convertible_bond import get_cb_realtime, get_cb_realtime_json, get_cb_value_analysis, get_cb_value_analysis_json, get_cb_comparison, get_cb_comparison_json, get_cb_info, get_cb_info_json
 
 __all__ = [
     # anti_ban_client
@@ -74,6 +81,22 @@ __all__ = [
     # industry
     "get_industry_comparison",
     "get_industry_comparison_json",
+    # etf
+    "get_etf_realtime",
+    "get_etf_realtime_json",
+    "get_etf_kline",
+    "get_etf_kline_json",
+    "get_etf_list",
+    "get_etf_list_json",
+    # convertible_bond
+    "get_cb_realtime",
+    "get_cb_realtime_json",
+    "get_cb_value_analysis",
+    "get_cb_value_analysis_json",
+    "get_cb_comparison",
+    "get_cb_comparison_json",
+    "get_cb_info",
+    "get_cb_info_json",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
