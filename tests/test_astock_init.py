@@ -10,7 +10,7 @@ class TestAstockSignalsInit:
 
     def test_import_version(self):
         import astock_signals
-        assert astock_signals.__version__ == "0.3.0"
+        assert astock_signals.__version__ == "0.3.1"
 
     def test_import_anti_ban_client(self):
         from astock_signals import em_get, em_datacenter, em_push2
