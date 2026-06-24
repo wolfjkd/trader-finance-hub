@@ -6,23 +6,21 @@ TradingAgents-astock 移植层 + 品种扩展层。
 北向资金、个股资金流、龙虎榜、行业对比 9 个维度的数据短板。
 V0.8 新增 ETF 和可转债 2 个品种的数据接口。
 
-Tools:
-  43. get_hot_stocks           - 涨停股票+主题归因（同花顺 editorial）
-  44. get_lockup_expiry        - 限售解禁日历（东财 datacenter）
-  45. get_concept_attribution  - 个股概念板块归属（东财→百度PAE fallback）
-  46. get_profit_forecast      - 一致预期EPS/Forward PE/PEG（同花顺）
-  47. get_technical_indicator  - 技术指标计算 MACD/RSI/Boll（stockstats）
-  48. get_northbound_flow      - 北向资金流向（同花顺 hsgtApi，astock_signals）
-  49. get_fund_flow_signal     - 个股资金流向（东财 push2，astock_signals）
-  50. get_dragon_tiger_signal  - 龙虎榜席位明细（东财 datacenter，astock_signals）
-  51. get_industry_comparison  - 行业横向对比排名（东财 push2，astock_signals）
-  52. get_etf_realtime_data    - ETF实时行情（AKShare fund_etf_spot_em）
-  53. get_etf_kline_data       - ETF历史K线（AKShare fund_etf_hist_em）
-  54. get_cb_realtime_data     - 可转债实时行情（AKShare bond_zh_cov）
-  55. get_cb_value_analysis_data - 可转债价值分析/转股溢价率（AKShare bond_zh_cov_value_analysis）
-
-  Total: 14 tools in signal_data.py, 57 tools overall in cn-financial-mcp.
-"""
+Tools (共 14 个，cn-financial-mcp 总计 61 个):
+  48. get_hot_stocks                - 涨停股票+主题归因（同花顺 editorial）
+  49. get_lockup_expiry             - 限售解禁日历（东财 datacenter）
+  50. get_concept_attribution       - 个股概念板块归属（东财 push2delay）
+  51. get_profit_forecast           - 一致预期EPS/Forward PE/PEG（同花顺）
+  52. get_technical_indicator       - 技术指标计算 MACD/RSI/Boll（stockstats）
+  53. list_technical_indicators     - 列出所有支持的技术指标及说明
+  54. get_northbound_flow_signal    - 北向资金流向（同花顺 hsgtApi，astock_signals）
+  55. get_fund_flow_signal          - 个股资金流向（东财 push2，astock_signals）
+  56. get_dragon_tiger_signal       - 龙虎榜席位明细（东财 datacenter，astock_signals）
+  57. get_industry_comparison_signal - 行业横向对比排名（东财 push2，astock_signals）
+  58. get_etf_realtime_data         - ETF实时行情（AKShare fund_etf_spot_em）
+  59. get_etf_kline_data            - ETF历史K线（AKShare fund_etf_hist_em）
+  60. get_cb_realtime_data          - 可转债实时行情（AKShare bond_zh_cov）
+  61. get_cb_value_analysis_data    - 可转债价值分析/转股溢价率（AKShare bond_zh_cov_value_analysis）
 """
 
 from __future__ import annotations
@@ -439,8 +437,9 @@ def register(mcp: FastMCP):
         return dict_to_json(result)
 
     # ----------------------------------------------------------------
-    # V0.7: 4 new tools from astock_signals (northbound/fund_flow/
+    # V0.7: 4 tools from astock_signals (northbound/fund_flow/
     #       dragon_tiger/industry) — TradingAgents-astock 移植
+    # 函数名带 _signal 后缀以避免与 market/industry 模块同名冲突
     # ----------------------------------------------------------------
 
     @mcp.tool()

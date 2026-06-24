@@ -1,94 +1,133 @@
 # 金融数据中枢 - 架构设计文档
 
+> 最后更新：2026-06-24 | v2.3.0
+
 ## 1. 系统概览
 
-Buddy 金融数据中枢是一个多源 MCP 数据聚合平台，为 AI Agent 提供统一的中国金融市场数据接口。
+trader-finance-hub 是为 AI Agent（WorkBuddy / Claude Code / Cursor）提供 A 股金融数据 MCP 接口的统一数据层。
+
+- **MCP 工具总数**：61 个
+- **数据源**：AKShare（主） + eltdx 通达信协议 + 东财直连 + 同花顺
+- **传输方式**：stdio（本地 MCP Server）
 
 ## 2. 核心组件
 
 ### 2.1 MCP 协议层
-- **协议**: Model Context Protocol (MCP)
-- **传输**: stdio (本地) / HTTP-SSE (远程)
-- **格式**: JSON-RPC 2.0
+- **协议**: Model Context Protocol (MCP) 1.0
+- **传输**: stdio (本地)
+- **框架**: FastMCP (Python)
+- **包名**: cn-financial-mcp (v2.3.0)
 
 ### 2.2 数据源
 
-| 数据源 | 接入方式 | 优先级 | 用途 |
-|--------|----------|--------|------|
-| 腾讯接口 | HTTP 直连 | P0 | 实时行情快照 |
-| 通达信 MCP | MCP stdio | P0 | 行情/K线/公告/研报 |
-| Wind MCP | CLI + MCP | P1 | 深度财务/技术指标 |
-| 东财 MCP | MCP stdio | P1 | 行业/板块/宏观 |
-| ftshare | CLI | P2 | 公告PDF下载 |
-| WebSearch | AI内置 | P3 | 新闻兜底 |
-| market_analyzer | Python CLI | P1 | 全市场综合分析（新闻/板块/情绪） |
+| 数据源 | 类型 | 用途 | 优先级 |
+|--------|------|------|--------|
+| AKShare | Python 库 | 主力数据源：行情/财务/估值/行业/新闻/宏观（42 工具） | P0 |
+| eltdx 1.0.2 | TCP 通达信协议 | 独有数据：集合竞价/逐笔/F10/分时/K线（5 工具） | P0 |
+| 东财直连 (push2/datacenter) | HTTP | 信号数据：资金流/龙虎榜/行业对比/北向/解禁（astock_signals） | P1 |
+| 同花顺 (hsgtApi/editorial) | HTTP | 信号数据：北向资金/涨停归因/一致预期（astock_signals） | P1 |
+| 腾讯行情 (qt.gtimg.cn) | HTTP | 个股实时报价（辅助一致预期估值计算） | P2 |
 
-### 2.3 智能路由 (data_router.py)
+**一主一备架构**：每个数据类型至少有 1 主 + 1 备，主力源失败时自动降级到备用源。
+
+### 2.3 模块结构
 
 ```
-请求 → probe_sources(数据类型)
-    │
-    ├── ThreadPoolExecutor 并行探测
-    │     ├── TencentAdapter  (行情/指数)
-    │     ├── WindAdapter      (深度数据)
-    │     ├── EastMoneyAdapter (行业/板块/宏观)
-    │     └── FtShareAdapter   (公告)
-    │
-    ↓
-select_best(results) → 评分择优
+cn-financial-mcp (v2.3.0) ── FastMCP Server, 61 MCP 工具
+│
+├── tools/
+│   ├── company_info.py    (4 工具) — 搜索/概况/竞品
+│   ├── price_data.py      (4 工具) — 实时行情/历史K线/市值/列表
+│   ├── financial_stmt.py  (8 工具) — 三表+财务指标+增长率+每股+分拆营收
+│   ├── valuation.py       (4 工具) — PE/PB/PS历史/分红/机构持仓/分析师评级
+│   ├── industry.py        (5 工具) — 行业板块/成分股/概念/板块资金流/行业PE
+│   ├── market.py          (5 工具) — 指数快照/资金流/北向/涨跌停/龙虎榜
+│   ├── news_events.py     (4 工具) — 个股新闻/财报日历/公告/关键词搜索
+│   ├── macro_fx.py        (8 工具) — GDP/CPI/PMI/M2/汇率/国债/两融/增减持
+│   ├── signal_data.py    (14 工具) — 涨停/解禁/概念/预期/技术指标/北向/资金流/龙虎/行业/ETF/可转债
+│   └── eltdx_data.py      (5 工具) — 集合竞价/逐笔/F10/分时/K线
+│
+└── utils/
+    ├── cache.py     — TTL 内存缓存
+    ├── formatter.py — DataFrame → JSON 格式化
+    └── symbol.py    — 股票代码标准化
 ```
 
-评分模型: 可用性40% + 及时性30% + 质量30%
+### 2.4 astock_signals 模块（信号数据后端）
 
-### 2.4 本地知识库 (Phase 2)
-- SQLite 存储研报/公告
-- 语义搜索
-- 定时自动缓存
+位于 `src/astock_signals/`，v0.3.0，14 个模块：
 
-### 2.5 全市场分析引擎 (market_analyzer.py)
+| 模块 | 功能 | 数据源 |
+|------|------|--------|
+| anti_ban_client | 东财防封客户端（节流+Session复用） | — |
+| lockup | 限售解禁日历 | 东财 datacenter |
+| hot_money | 涨停归因 | 同花顺 editorial |
+| concept | 概念/行业/地域板块归属 | 东财 push2delay |
+| indicators | 13种技术指标（MACD/RSI/Boll/ATR等） | stockstats + AKShare |
+| northbound | 北向资金流向 | 同花顺 hsgtApi |
+| fund_flow | 个股资金流向 | 东财 push2 |
+| dragon_tiger | 龙虎榜席位明细 | 东财 datacenter |
+| industry | 行业横向对比排名 | 东财 push2 |
+| etf | ETF 实时行情/历史K线/列表 | AKShare |
+| convertible_bond | 可转债实时/价值分析/比价/详情 | AKShare |
+| smart_router | 智能路由引擎（健康评分/自动降级） | — |
+| tick_store | Tick 数据本地存储（SQLite WAL） | — |
+| ws_server | WebSocket 实时推送服务器 | — |
 
-核心组件:
+### 2.5 eltdx 通达信协议
 
-| 组件 | 行数 | 功能 |
-|------|------|------|
-| NewsFetcher | ~130 | 4源新闻聚合 + 情感检测 + 影响度评分 |
-| THSDataFetcher | ~200 | AKShare内置THS函数(29个)，替代不可用的THS MCP |
-| MarketModels | ~180 | 四象限模型 + 信息熵共识度 + 情绪时钟 |
+通过 eltdx 1.0.2 连接通达信私有协议 (TCP 7709)，提供 AKShare 无法覆盖的独有数据：
 
-输出: 新闻聚合 / 板块四象限 / 情绪时钟 / 综合报告(JSON)
+| 数据 | 延迟 | AKShare 是否有 |
+|------|------|---------------|
+| 集合竞价 (9:15-9:25) | ~40ms | ❌ 没有 |
+| 逐笔成交 | ~45ms | ❌ 没有 |
+| F10 资料（题材归因） | ~2200ms | ❌ 没有 |
+| 分时数据 | ~40ms | ⚠️ 有但源不同 |
+| K线（多周期） | ~80ms | ⚠️ 有但源不同 |
 
 ## 3. 数据流
 
 ```
-定时任务触发
-    ↓
-data_router.py health → 检测存活数据源
-    ↓
-并行获取数据 (行情/公告/新闻/财务)
-    ↓
-本地缓存 (可选)
-    ↓
-生成报告 → 腾讯文档
+AI Agent (WorkBuddy / Claude Code / Cursor)
+        │  MCP 协议 (stdio, JSON-RPC 2.0)
+        ▼
+  cn-financial-mcp server.py
+        │
+        ├── 注册 10 个工具模块 → 61 个 MCP 工具
+        │
+        ├── AKShare 工具 → akshare 库 → 东财/新浪/腾讯等公开 API
+        ├── eltdx 工具 → eltdx TCP 7709 → 通达信私有协议
+        └── signal_data 工具 → astock_signals 模块 → 东财/同花顺 HTTP 直连
 ```
 
-## 4. 扩展性设计
+## 4. 与其他组件的关系
 
-### 新增数据源
-1. 实现 Adapter 接口 (probe + fetch)
-2. 在 `data_router.py` 注册
-3. 配置评分权重
-
-### 切换数据源
-- 自动: 健康检测 <50分自动降级
-- 手动: 修改 `config/mcp-servers.json`
-
-## 5. 部署环境
-
-| 组件 | 位置 | 说明 |
+| 组件 | 位置 | 关系 |
 |------|------|------|
-| WorkBuddy | `~/.workbuddy/` | AI Agent 主体 |
-| MCP Config | `~/.workbuddy/.mcp.json` | MCP Server 注册 |
-| 项目代码 | `~/.workbuddy/skills/trader-data-router/` | 智能路由+Skill |
-| 东财 MCP | `trader-finance-hub/cn-financial-mcp/` | 新增数据源 |
-| Wind MCP | `~/.workbuddy/skills/wind-mcp-skill/` | Wind 金融数据 |
-| ftshare | `~/.workbuddy/skills/ftshare-announcement-data/` | 公告数据 |
+| trader-data-router | `~/.workbuddy/skills/trader-data-router/` | CLI 工具，17 个命令，薄壳调用 astock_signals |
+| Wind MCP | `~/.workbuddy/skills/wind-mcp-skill/` | 独立 MCP，通过 WorkBuddy connector 接入 |
+| 通达信 MCP | WorkBuddy connector | 独立 connector (tdx-connector) |
+
+## 5. 配置
+
+编辑 `~/.workbuddy/mcp.json` 注册 MCP Server：
+
+```json
+{
+  "mcpServers": {
+    "cn-financial-mcp": {
+      "command": "/path/to/venv/Scripts/python.exe",
+      "args": ["-m", "cn_financial_mcp"],
+      "env": {}
+    }
+  }
+}
+```
+
+## 6. 老板网络约束
+
+- 国内 API 禁止走代理（`HTTPS_PROXY`/`HTTP_PROXY` 必须为 None）
+- `push2.eastmoney.com` 直连被封 → 使用 `push2delay.eastmoney.com` 镜像
+- `datacenter-web.eastmoney.com` 可直连
+- 百度 PAE (`finance.pae.baidu.com`) 自 2026-05 起 403，已记录为不可用

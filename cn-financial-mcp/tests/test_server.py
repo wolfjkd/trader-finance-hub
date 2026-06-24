@@ -9,9 +9,9 @@ class TestServerSetup:
     def test_server_name(self, mcp_server):
         assert mcp_server.name == "cn-financial-mcp"
 
-    def test_all_42_tools_registered(self, mcp_server):
+    def test_all_61_tools_registered(self, mcp_server):
         tools = mcp_server._tool_manager._tools
-        assert len(tools) == 42, f"Expected 42 tools, got {len(tools)}"
+        assert len(tools) == 61, f"Expected 61 tools, got {len(tools)}"
 
     def test_v01_tools_present(self, mcp_server):
         """V0.1 company info + price data tools (8 tools)."""
@@ -87,7 +87,42 @@ class TestServerSetup:
         for tool_name in v04_tools:
             assert tool_name in tools, f"V0.4 tool '{tool_name}' not registered"
 
-    def test_tool_count_per_version(self, mcp_server):
-        """Verify tool counts match the plan: 8+12+14+8 = 42."""
+    def test_v05_signal_data_tools_present(self, mcp_server):
+        """V0.5 signal data tools (14 tools)."""
         tools = mcp_server._tool_manager._tools
-        assert len(tools) == 8 + 12 + 14 + 8
+        v05_tools = [
+            "get_hot_stocks",
+            "get_lockup_expiry",
+            "get_concept_attribution",
+            "get_profit_forecast",
+            "get_technical_indicator",
+            "list_technical_indicators",
+            "get_northbound_flow_signal",
+            "get_fund_flow_signal",
+            "get_dragon_tiger_signal",
+            "get_industry_comparison_signal",
+            "get_etf_realtime_data",
+            "get_etf_kline_data",
+            "get_cb_realtime_data",
+            "get_cb_value_analysis_data",
+        ]
+        for tool_name in v05_tools:
+            assert tool_name in tools, f"V0.5 tool '{tool_name}' not registered"
+
+    def test_v06_eltdx_tools_present(self, mcp_server):
+        """V0.6 eltdx tools (5 tools)."""
+        tools = mcp_server._tool_manager._tools
+        v06_tools = [
+            "eltdx_get_auction",
+            "eltdx_get_ticks",
+            "eltdx_get_f10",
+            "eltdx_get_minutes",
+            "eltdx_get_kline",
+        ]
+        for tool_name in v06_tools:
+            assert tool_name in tools, f"V0.6 tool '{tool_name}' not registered"
+
+    def test_tool_count_per_version(self, mcp_server):
+        """Verify tool counts match the plan: 8+12+14+8+14+5 = 61."""
+        tools = mcp_server._tool_manager._tools
+        assert len(tools) == 8 + 12 + 14 + 8 + 14 + 5

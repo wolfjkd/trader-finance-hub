@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 
+## [2.3.1] - 2026-06-24
+
+### Fixed
+- 修复文档与代码不一致的4个高优先级问题
+- 修复README.md版本/工具数与代码不一致（57→61工具）
+- 修复architecture.md架构文档严重过时，全面更新为当前架构
+- 修复signal_data.py内部注释不一致（工具数量和编号）
+- 修复astock_signals/__init__.py模块清单不全（11→14个模块）
+- 修复cn-financial-mcp/README.md严重过时（42→61工具）
+- 修复cn-financial-mcp/tests/test_server.py测试过时（42→61工具）
+- 修复README.md数据源描述不准确（AKShare 50→56工具）
+
+### Changed
+- 文档全面更新，准确反映v2.3.0版本的实际架构
+- 测试用例更新，验证61个工具的正确注册
+- 新增文档修复报告（docs/documentation-fix-report.md）
+
 ## [2.3.0] - 2026-06-24
 
 ### Added

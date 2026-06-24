@@ -41,7 +41,7 @@ def get_hot_stocks(curr_date: str = "") -> str:
 
     try:
         url = (
-            f"http://zx.10jqka.com.cn/event/api/getharden/"
+            f"https://zx.10jqka.com.cn/event/api/getharden/"
             f"date/{curr_date}/orderby/date/orderway/desc/charset/GBK/"
         )
         headers = {"User-Agent": _UA}
@@ -112,7 +112,7 @@ def get_hot_stocks_json(curr_date: str = "") -> dict:
 
     try:
         url = (
-            f"http://zx.10jqka.com.cn/event/api/getharden/"
+            f"https://zx.10jqka.com.cn/event/api/getharden/"
             f"date/{curr_date}/orderby/date/orderway/desc/charset/GBK/"
         )
         headers = {"User-Agent": _UA}

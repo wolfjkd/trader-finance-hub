@@ -133,33 +133,31 @@ class SmartRouter:
             for name, fn, priority in candidates:
                 key = f"{data_type}:{name}"
                 health = self._health.get(key)
-                if health and health.is_healthy:
+                if health is None:
+                    # 新源：注册时已创建 SourceHealth，这里兜底
+                    health = SourceHealth(name=name)
+                    self._health[key] = health
+                if health.is_healthy:
                     # 综合评分 = 健康分 * 0.7 + 优先级分 * 0.3
                     priority_score = max(0, 100 - priority)
                     combined = health.score * 0.7 + priority_score * 0.3
                     scored.append((combined, name, fn, health))
-                elif health is None:
-                    # 新源，默认给机会
-                    scored.append((80.0, name, fn, None))
 
         scored.sort(key=lambda x: x[0], reverse=True)
 
         errors = []
         for _, source_name, fetch_fn, health in scored:
-            key = f"{data_type}:{source_name}"
             t0 = time.time()
             try:
                 result = fetch_fn(**kwargs)
                 latency_ms = (time.time() - t0) * 1000
-                if health:
-                    health.record_success(latency_ms)
+                health.record_success(latency_ms)
                 logger.debug(
                     "SmartRouter: %s via %s OK (%.0fms)", data_type, source_name, latency_ms
                 )
                 return result, source_name
             except Exception as e:
-                if health:
-                    health.record_failure()
+                health.record_failure()
                 errors.append(f"{source_name}: {e}")
                 logger.warning(
                     "SmartRouter: %s via %s FAILED: %s", data_type, source_name, e

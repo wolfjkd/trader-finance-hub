@@ -10,10 +10,12 @@ Tick 数据本地存储模块 — SQLite 持久化。
 - 按股票代码分表（避免单表过大）
 - 交易日+时间戳联合去重
 - WAL模式提高并发读写性能
+- 写操作使用 threading.Lock 保证线程安全
 """
 
 from __future__ import annotations
 
+import re
 import os
 import sqlite3
 import logging
@@ -28,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_DB_DIR = os.path.join(os.path.expanduser("~"), ".workbuddy", "data")
 _DEFAULT_DB_NAME = "tick_store.db"
+
+# 表名合法字符白名单：仅允许字母、数字、下划线
+_SAFE_TABLE_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
 class TickStore:
@@ -46,6 +51,7 @@ class TickStore:
             db_path = os.path.join(db_dir, _DEFAULT_DB_NAME)
         self._db_path = db_path
         self._local = threading.local()
+        self._write_lock = threading.Lock()  # 保护写操作
         self._init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
@@ -75,9 +81,19 @@ class TickStore:
         conn.commit()
 
     def _table_name(self, code: str, trade_date: str) -> str:
-        """生成分表名：tick_{code}_{date}"""
+        """生成分表名：tick_{code}_{date}
+
+        Raises:
+            ValueError: 参数包含非法字符
+        """
         safe_code = code.replace(".", "_").replace(" ", "")
-        return f"tick_{safe_code}_{trade_date}"
+        safe_date = trade_date.replace(".", "").replace("-", "").replace(" ", "")
+        # 白名单校验，防止 SQL 注入
+        if not _SAFE_TABLE_RE.match(safe_code):
+            raise ValueError(f"Invalid code for table name: {code!r}")
+        if not _SAFE_TABLE_RE.match(safe_date):
+            raise ValueError(f"Invalid trade_date for table name: {trade_date!r}")
+        return f"tick_{safe_code}_{safe_date}"
 
     def _ensure_table(self, table_name: str):
         """确保 tick 数据表存在。"""
@@ -115,43 +131,44 @@ class TickStore:
             return 0
 
         table = self._table_name(code, trade_date)
-        self._ensure_table(table)
+        with self._write_lock:
+            self._ensure_table(table)
 
-        conn = self._get_conn()
-        inserted = 0
-        for row in data:
-            try:
-                conn.execute(
-                    f'INSERT OR IGNORE INTO "{table}" '
-                    f"(time, price, volume, amount, direction, bid1, ask1) "
-                    f"VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        row.get("time", ""),
-                        row.get("price"),
-                        row.get("volume"),
-                        row.get("amount"),
-                        row.get("direction", ""),
-                        row.get("bid1"),
-                        row.get("ask1"),
-                    ),
-                )
-                if conn.total_changes:
-                    inserted += 1
-            except sqlite3.IntegrityError:
-                pass
-            except Exception as e:
-                logger.warning("save_tick row failed: %s", e)
+            conn = self._get_conn()
+            inserted = 0
+            for row in data:
+                try:
+                    cursor = conn.execute(
+                        f'INSERT OR IGNORE INTO "{table}" '
+                        f"(time, price, volume, amount, direction, bid1, ask1) "
+                        f"VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            row.get("time", ""),
+                            row.get("price"),
+                            row.get("volume"),
+                            row.get("amount"),
+                            row.get("direction", ""),
+                            row.get("bid1"),
+                            row.get("ask1"),
+                        ),
+                    )
+                    if cursor.rowcount > 0:
+                        inserted += 1
+                except sqlite3.IntegrityError:
+                    pass
+                except Exception as e:
+                    logger.warning("save_tick row failed: %s", e)
 
-        conn.commit()
+            conn.commit()
 
-        # 更新元数据
-        total = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
-        conn.execute(
-            "INSERT OR REPLACE INTO _tick_meta (code, trade_date, table_name, row_count, updated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (code, trade_date, table, total, datetime.now().isoformat()),
-        )
-        conn.commit()
+            # 更新元数据
+            total = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            conn.execute(
+                "INSERT OR REPLACE INTO _tick_meta (code, trade_date, table_name, row_count, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (code, trade_date, table, total, datetime.now().isoformat()),
+            )
+            conn.commit()
 
         logger.info("Saved %d tick rows for %s/%s (total: %d)", inserted, code, trade_date, total)
         return inserted
@@ -237,9 +254,13 @@ class TickStore:
 
 # 全局单例
 _global_store: TickStore | None = None
+_store_lock = threading.Lock()
+
 
 def get_tick_store(db_path: str = "") -> TickStore:
     global _global_store
     if _global_store is None:
-        _global_store = TickStore(db_path)
+        with _store_lock:
+            if _global_store is None:
+                _global_store = TickStore(db_path)
     return _global_store

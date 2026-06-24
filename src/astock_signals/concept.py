@@ -22,7 +22,7 @@ from datetime import datetime
 import json
 import logging
 import os
-from functools import lru_cache
+import time
 from typing import Any
 
 import requests as _requests
@@ -174,12 +174,19 @@ def _get_stock_board_info(code: str) -> dict[str, str]:
     return {"error": f"未找到 {code} 的概念归属数据"}
 
 
-@lru_cache(maxsize=1)
+_region_boards_cache: dict[str, str] | None = None
+_region_boards_ts: float = 0.0
+_REGION_CACHE_TTL: float = 3600.0  # 1 小时过期
+
+
 def _get_region_boards() -> dict[str, str]:
     """Get all region (地域) boards: {name: bk_code}.
 
-    Uses push2delay mirror. Cached for session.
+    Uses push2delay mirror. Cached with 1-hour TTL.
     """
+    global _region_boards_cache, _region_boards_ts
+    if _region_boards_cache is not None and (time.time() - _region_boards_ts) < _REGION_CACHE_TTL:
+        return _region_boards_cache
     boards: dict[str, str] = {}
     page = 1
     while True:
@@ -213,6 +220,8 @@ def _get_region_boards() -> dict[str, str]:
         page += 1
 
     logger.info("Loaded %d region boards via push2delay", len(boards))
+    _region_boards_cache = boards
+    _region_boards_ts = time.time()
     return boards
 
 

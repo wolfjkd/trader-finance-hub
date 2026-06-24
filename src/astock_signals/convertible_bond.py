@@ -39,31 +39,33 @@ def get_cb_realtime(top_n: int = 50, sort_by: str = "成交额") -> list[dict]:
         if df is None or df.empty:
             return []
 
+        # 精确匹配列名（避免子串匹配导致多列映射同名）
+        _EXACT_MAP = {
+            "债券代码": "bond_code",
+            "债券简称": "bond_name",
+            "正股代码": "stock_code",
+            "正股简称": "stock_name",
+            "正股价": "stock_price",
+            "转股价": "conversion_price",
+            "转股价值": "conversion_value",
+            "债现价": "bond_price",
+            "转股溢价率(%)": "conversion_premium",
+            "转股溢价率": "conversion_premium",
+            "信用评级": "credit_rating",
+            "评级": "credit_rating",
+        }
         col_map = {}
+        seen_targets = set()
         for col in df.columns:
-            col_str = str(col)
-            if "债券代码" in col_str:
-                col_map[col] = "bond_code"
-            elif "债券简称" in col_str:
-                col_map[col] = "bond_name"
-            elif "正股代码" in col_str:
-                col_map[col] = "stock_code"
-            elif "正股简称" in col_str:
-                col_map[col] = "stock_name"
-            elif "正股价" in col_str:
-                col_map[col] = "stock_price"
-            elif "转股价" in col_str:
-                col_map[col] = "conversion_price"
-            elif "转股价值" in col_str:
-                col_map[col] = "conversion_value"
-            elif "债现价" in col_str:
-                col_map[col] = "bond_price"
-            elif "转股溢价率" in col_str:
-                col_map[col] = "conversion_premium"
-            elif "信用评级" in col_str or "评级" in col_str:
-                col_map[col] = "credit_rating"
+            col_str = str(col).strip()
+            target = _EXACT_MAP.get(col_str)
+            if target and target not in seen_targets:
+                col_map[col] = target
+                seen_targets.add(target)
 
         df = df.rename(columns=col_map)
+        # 去除重名列（防止 AKShare 返回含重复列名的 DataFrame）
+        df = df.loc[:, ~df.columns.duplicated()]
 
         # 排序
         if sort_by == "转股溢价率" and "conversion_premium" in df.columns:
@@ -175,29 +177,29 @@ def get_cb_comparison(top_n: int = 50) -> list[dict]:
         if df is None or df.empty:
             return []
 
+        _EXACT_MAP = {
+            "转债代码": "bond_code",
+            "转债名称": "bond_name",
+            "转债最新价": "bond_price",
+            "正股代码": "stock_code",
+            "正股名称": "stock_name",
+            "转股价": "conversion_price",
+            "转股价值": "conversion_value",
+            "转股溢价率(%)": "conversion_premium",
+            "转股溢价率": "conversion_premium",
+            "纯债价值": "bond_value",
+        }
         col_map = {}
+        seen_targets = set()
         for col in df.columns:
-            col_str = str(col)
-            if "转债代码" in col_str:
-                col_map[col] = "bond_code"
-            elif "转债名称" in col_str:
-                col_map[col] = "bond_name"
-            elif "转债最新价" in col_str:
-                col_map[col] = "bond_price"
-            elif "正股代码" in col_str:
-                col_map[col] = "stock_code"
-            elif "正股名称" in col_str:
-                col_map[col] = "stock_name"
-            elif "转股价" in col_str:
-                col_map[col] = "conversion_price"
-            elif "转股价值" in col_str:
-                col_map[col] = "conversion_value"
-            elif "转股溢价率" in col_str:
-                col_map[col] = "conversion_premium"
-            elif "纯债价值" in col_str:
-                col_map[col] = "bond_value"
+            col_str = str(col).strip()
+            target = _EXACT_MAP.get(col_str)
+            if target and target not in seen_targets:
+                col_map[col] = target
+                seen_targets.add(target)
 
         df = df.rename(columns=col_map)
+        df = df.loc[:, ~df.columns.duplicated()]
         df = df.head(top_n)
         records = df.to_dict("records")
         for r in records:

@@ -1,60 +1,51 @@
 {
-  "version": "1.0",
-  "description": "Buddy 金融数据中枢 - MCP Server 配置",
+  "version": "2.0",
+  "description": "Buddy 金融数据中枢 - MCP Server 配置（v2.3.0）",
   "servers": {
-    "cn-financial": {
-      "name": "东方财富 MCP",
+    "cn-financial-mcp": {
+      "name": "cn-financial-mcp 金融数据中枢",
       "type": "stdio",
-      "tools": 42,
-      "modules": ["company_info", "price_data", "financial_stmt", "valuation", "industry", "market", "news_events", "macro_fx"],
-      "source": "https://github.com/ccq1/cn-financial-mcp",
-      "note": "基于AKShare，东方财富→新浪/腾讯/同花顺自动fallback"
+      "tools": 61,
+      "modules": ["company_info(4)", "price_data(4)", "financial_stmt(8)", "valuation(4)", "industry(5)", "market(5)", "news_events(4)", "macro_fx(8)", "signal_data(14)", "eltdx_data(5)"],
+      "version": "2.3.0",
+      "note": "AKShare主+东财直连+同花顺，61个MCP工具"
     },
     "tdx-connector": {
       "name": "通达信 MCP",
-      "type": "http",
+      "type": "connector",
       "modules": ["quotes", "kline", "screener", "notice", "report", "news"],
-      "source": "WorkBuddy connector-proxy"
-    },
-    "wind-mcp": {
-      "name": "Wind 万得 MCP",
-      "type": "CLI+MCP",
-      "server_types": ["stock_data", "global_stock_data", "fund_data", "index_data", "bond_data", "financial_docs", "economic_data", "analytics_data"],
-      "note": "有日调用额度，珍惜使用"
+      "source": "WorkBuddy connector-proxy",
+      "note": "独立connector，非cn-financial-mcp子模块"
     }
   },
   "routing": {
     "realtime_quote": {
-      "primary": "tencent-http",
-      "fallback": ["tdx-connector", "cn-financial"]
-    },
-    "kline": {
-      "primary": "wind-mcp",
-      "fallback": ["cn-financial", "tdx-connector"]
-    },
-    "announcements": {
-      "primary": "ftshare",
-      "fallback": ["tdx-connector", "cn-financial"]
-    },
-    "financials": {
-      "primary": "wind-mcp",
-      "fallback": ["cn-financial"]
-    },
-    "industry_board": {
-      "primary": "cn-financial",
-      "fallback": ["wind-mcp"]
-    },
-    "macro": {
-      "primary": "cn-financial",
-      "fallback": ["wind-mcp"]
-    },
-    "dragon_tiger": {
-      "primary": "cn-financial",
+      "primary": "cn-financial-mcp (get_realtime_price)",
       "fallback": ["tdx-connector"]
     },
-    "north_bound": {
-      "primary": "cn-financial",
+    "kline": {
+      "primary": "cn-financial-mcp (get_kline)",
+      "fallback": ["tdx-connector"]
+    },
+    "financials": {
+      "primary": "cn-financial-mcp (get_financial_statements)",
       "fallback": []
+    },
+    "industry_board": {
+      "primary": "cn-financial-mcp (get_industry_boards)",
+      "fallback": []
+    },
+    "macro": {
+      "primary": "cn-financial-mcp (macro_fx)",
+      "fallback": []
+    },
+    "dragon_tiger": {
+      "primary": "cn-financial-mcp (get_dragon_tiger)",
+      "fallback": ["signal_data (get_dragon_tiger_signal)"]
+    },
+    "northbound": {
+      "primary": "cn-financial-mcp (get_northbound_flow)",
+      "fallback": ["signal_data (get_northbound_flow_signal)"]
     }
   }
 }

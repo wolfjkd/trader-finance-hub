@@ -12,9 +12,11 @@ TradingAgents-astock 移植模块。V0.1。
 from __future__ import annotations
 
 import os
+import re
 import random
 import time
 import logging
+import threading
 
 import requests as _requests
 
@@ -27,6 +29,7 @@ logger = logging.getLogger(__name__)
 _EM_SESSION: _requests.Session | None = None
 _EM_MIN_INTERVAL: float = float(os.environ.get("EM_MIN_INTERVAL", "1.0"))
 _em_last_call: list[float] = [0.0]  # mutable for inner func access
+_lock = threading.Lock()  # 保护 session 初始化和限流逻辑
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -35,13 +38,18 @@ _UA = (
 
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 
+# 6 位纯数字股票代码正则（用于 SQL filter 注入防护）
+_CODE_RE = re.compile(r"^\d{6}$")
+
 
 def _ensure_session() -> _requests.Session:
-    """Get or create the shared Eastmoney session (lazy init)."""
+    """Get or create the shared Eastmoney session (lazy init, thread-safe)."""
     global _EM_SESSION
     if _EM_SESSION is None:
-        _EM_SESSION = _requests.Session()
-        _EM_SESSION.headers.update({"User-Agent": _UA})
+        with _lock:
+            if _EM_SESSION is None:  # double-check
+                _EM_SESSION = _requests.Session()
+                _EM_SESSION.headers.update({"User-Agent": _UA})
     return _EM_SESSION
 
 
@@ -61,6 +69,7 @@ def em_get(
 
     所有 eastmoney.com 接口都应通过它请求，避免多 Agent 高频拉数据被封 IP。
     串行限流：与上次东财请求间隔 < EM_MIN_INTERVAL 时 sleep 补足 + 0.1~0.5s 随机抖动。
+    线程安全：使用锁确保限流计算和时间戳更新是原子操作。
 
     Args:
         url: Full URL to request.
@@ -72,15 +81,16 @@ def em_get(
     Returns:
         requests.Response object.
     """
-    wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.5))
-    try:
-        return _ensure_session().get(
-            url, params=params, headers=headers, timeout=timeout, **kwargs
-        )
-    finally:
+    with _lock:
+        wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
+        if wait > 0:
+            # 在锁内 sleep 保证串行限流
+            time.sleep(wait + random.uniform(0.1, 0.5))
         _em_last_call[0] = time.time()
+
+    return _ensure_session().get(
+        url, params=params, headers=headers, timeout=timeout, **kwargs
+    )
 
 
 def set_min_interval(seconds: float) -> None:
@@ -90,18 +100,42 @@ def set_min_interval(seconds: float) -> None:
         seconds: Minimum seconds between requests (default 1.0).
     """
     global _EM_MIN_INTERVAL
-    _EM_MIN_INTERVAL = float(seconds)
+    with _lock:
+        _EM_MIN_INTERVAL = float(seconds)
 
 
 def em_reset_session() -> None:
     """Close and recreate the Eastmoney session (e.g. after IP change)."""
     global _EM_SESSION
-    if _EM_SESSION is not None:
-        try:
-            _EM_SESSION.close()
-        except Exception:
-            pass
-        _EM_SESSION = None
+    with _lock:
+        if _EM_SESSION is not None:
+            try:
+                _EM_SESSION.close()
+            except Exception as e:
+                logger.debug("em_reset_session close error: %s", e)
+            _EM_SESSION = None
+
+
+# ---------------------------------------------------------------------------
+# Input validation helper
+# ---------------------------------------------------------------------------
+
+
+def validate_code(code: str) -> str:
+    """校验股票代码格式（纯 6 位数字），防止 SQL 注入。
+
+    Args:
+        code: 股票代码
+
+    Returns:
+        校验通过的代码
+
+    Raises:
+        ValueError: 代码格式不合法
+    """
+    if not _CODE_RE.match(code):
+        raise ValueError(f"Invalid stock code: {code!r} (must be 6 digits)")
+    return code
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +176,21 @@ def em_datacenter(
         "client": "WEB",
     }
     r = em_get(_DATACENTER_URL, params=params, timeout=15)
-    d = r.json()
+
+    # 检查 HTTP 状态码，403 时自动 reset session 并重试一次
+    if r.status_code == 403:
+        logger.warning("em_datacenter got 403, resetting session and retrying...")
+        em_reset_session()
+        r = em_get(_DATACENTER_URL, params=params, timeout=15)
+
+    r.raise_for_status()
+
+    try:
+        d = r.json()
+    except ValueError:
+        logger.error("em_datacenter: response is not valid JSON (status=%d)", r.status_code)
+        return []
+
     if d.get("result") and d["result"].get("data"):
         return d["result"]["data"]
     return []

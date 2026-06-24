@@ -125,8 +125,8 @@ def get_dragon_tiger_board(
                         f"  {row.get('OPERATEDEPT_NAME', '')} "
                         f"| {buy_amt:.0f} | {sell_amt:.0f} | {net:.0f}"
                     )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("dragon_tiger buy/sell seats query failed: %s", e)
 
     # 3. 机构动向
     try:
@@ -146,8 +146,8 @@ def get_dragon_tiger_board(
                 f"| 卖出 {inst_sell/1e4:.0f} 万 "
                 f"| 净额 {(inst_buy - inst_sell)/1e4:.0f} 万"
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("dragon_tiger institution query failed: %s", e)
 
     return "\n".join(lines)
 
@@ -264,7 +264,7 @@ def get_dragon_tiger_board_json(
                 "sell_wan": round(inst_sell / 10000, 1),
                 "net_wan": round((inst_buy - inst_sell) / 10000, 1),
             }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("dragon_tiger JSON institution query failed: %s", e)
 
     return result

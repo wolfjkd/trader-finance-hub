@@ -5,19 +5,20 @@ TradingAgents-astock 移植层。提供以下核心能力:
   - anti_ban_client:  东财防封客户端（节流+Session复用）
   - lockup:           限售解禁日历（RPT_LIFT_STAGE）
   - hot_money:        涨停归因/热点资金追踪（同花顺 editorial）
-  - concept:          概念板块归属（东财+百度PAE fallback）
+  - concept:          概念板块归属（东财 push2delay）
   - indicators:       技术指标计算（MACD/RSI/Boll/ATR 等）
   - northbound:       北向资金流向（沪深股通，同花顺 hsgtApi）
   - fund_flow:        个股资金流向（东财 push2）
   - dragon_tiger:     龙虎榜席位明细（东财 datacenter）
   - industry:         行业横向对比（东财 push2 行业排名）
 
-V0.3 — 新增 ETF / 可转债 2 个品种模块。
+V0.3 — 新增 ETF / 可转债 2 个品种模块 + 智能路由 / Tick存储 / WebSocket 3 个基础设施模块。
 
-模块清单（11个）:
+模块清单（14个）:
   - anti_ban_client / lockup / hot_money / concept / indicators
   - northbound / fund_flow / dragon_tiger / industry  (V0.2)
   - etf / convertible_bond  (V0.3 新品种)
+  - smart_router / tick_store / ws_server  (V0.3 基础设施)
 """
 
 from .anti_ban_client import (
@@ -99,4 +100,4 @@ __all__ = [
     "get_cb_info_json",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"

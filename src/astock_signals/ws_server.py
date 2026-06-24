@@ -11,12 +11,15 @@ WebSocket 实时推送服务器。
 - JSON 格式消息
 - 心跳保活（30秒间隔）
 - 支持多客户端并发连接
+- 默认绑定 127.0.0.1（仅本地访问）
+- 可选 token 认证
 
 依赖：pip install websockets（可选，不强制）
 """
 
 from __future__ import annotations
 
+import os
 import json
 import time
 import asyncio
@@ -31,17 +34,24 @@ class WsServer:
     """WebSocket 实时推送服务器。
 
     Usage:
-        server = WsServer(host="0.0.0.0", port=8765)
+        server = WsServer(host="127.0.0.1", port=8765, token="my_secret")
         # 在异步上下文中：
         await server.start()
         await server.push_quote("600519", {"price": 1800, "change_pct": 1.5})
-        # 客户端连接后发送 {"action":"subscribe","codes":["600519","000001"]}
+        # 客户端连接后发送 {"action":"auth","token":"my_secret"} 进行认证
+        # 认证后发送 {"action":"subscribe","codes":["600519","000001"]}
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8765):
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8765,
+        token: str = "",
+    ):
         self.host = host
         self.port = port
-        self._clients: dict = {}  # websocket -> set of subscribed codes
+        self._token = token or os.environ.get("WS_TOKEN", "")
+        self._clients: dict = {}  # websocket -> {"codes": set, "authed": bool}
         self._server = None
         self._running = False
 
@@ -57,7 +67,8 @@ class WsServer:
             self._handler, self.host, self.port
         )
         self._running = True
-        logger.info("WebSocket server started on ws://%s:%d", self.host, self.port)
+        logger.info("WebSocket server started on ws://%s:%d (auth=%s)",
+                     self.host, self.port, "required" if self._token else "disabled")
 
     async def stop(self):
         """停止 WebSocket 服务器。"""
@@ -69,28 +80,48 @@ class WsServer:
 
     async def _handler(self, websocket, path=None):
         """处理单个客户端连接。"""
-        self._clients[websocket] = set()
-        logger.info("Client connected: %s", websocket.remote_address)
+        self._clients[websocket] = {"codes": set(), "authed": not self._token}
+        logger.info("Client connected: %s (auth=%s)",
+                     websocket.remote_address, self._clients[websocket]["authed"])
         try:
             async for raw_msg in websocket:
                 try:
                     msg = json.loads(raw_msg)
                     action = msg.get("action", "")
 
-                    if action == "subscribe":
+                    # 认证检查（仅在设置了 token 时要求）
+                    if self._token and not self._clients[websocket]["authed"]:
+                        if action == "auth" and msg.get("token") == self._token:
+                            self._clients[websocket]["authed"] = True
+                            await websocket.send(json.dumps({
+                                "type": "auth", "status": "ok"
+                            }))
+                        else:
+                            await websocket.send(json.dumps({
+                                "type": "error", "message": "Authentication required"
+                            }))
+                        continue
+
+                    if action == "auth":
+                        # 已认证状态重复 auth
+                        await websocket.send(json.dumps({
+                            "type": "auth", "status": "already_authenticated"
+                        }))
+
+                    elif action == "subscribe":
                         codes = msg.get("codes", [])
-                        self._clients[websocket].update(codes)
+                        self._clients[websocket]["codes"].update(codes)
                         await websocket.send(json.dumps({
                             "type": "subscribed",
-                            "codes": list(self._clients[websocket]),
+                            "codes": list(self._clients[websocket]["codes"]),
                         }))
 
                     elif action == "unsubscribe":
                         codes = msg.get("codes", [])
-                        self._clients[websocket] -= set(codes)
+                        self._clients[websocket]["codes"] -= set(codes)
                         await websocket.send(json.dumps({
                             "type": "unsubscribed",
-                            "codes": list(self._clients[websocket]),
+                            "codes": list(self._clients[websocket]["codes"]),
                         }))
 
                     elif action == "ping":
@@ -100,7 +131,7 @@ class WsServer:
                         await websocket.send(json.dumps({
                             "type": "status",
                             "connected_clients": len(self._clients),
-                            "subscriptions": list(self._clients[websocket]),
+                            "subscriptions": list(self._clients[websocket]["codes"]),
                         }))
 
                 except json.JSONDecodeError:
@@ -112,6 +143,13 @@ class WsServer:
             logger.debug("Client disconnected: %s", e)
         finally:
             self._clients.pop(websocket, None)
+
+    def _get_subscribed_clients(self, code: str) -> list:
+        """获取订阅了指定代码且已认证的客户端列表。"""
+        return [
+            ws for ws, info in self._clients.items()
+            if info["authed"] and (code in info["codes"] or "*" in info["codes"])
+        ]
 
     async def push_quote(self, code: str, data: dict):
         """推送行情数据到订阅了该代码的所有客户端。"""
@@ -125,10 +163,7 @@ class WsServer:
             "timestamp": datetime.now().isoformat(),
         }, ensure_ascii=False)
 
-        targets = [
-            ws for ws, codes in self._clients.items()
-            if code in codes or "*" in codes
-        ]
+        targets = self._get_subscribed_clients(code)
         if targets:
             await asyncio.gather(
                 *[self._safe_send(ws, msg) for ws in targets],
@@ -136,7 +171,7 @@ class WsServer:
             )
 
     async def push_signal(self, signal_type: str, data: dict):
-        """推送异动信号到所有客户端（全局广播）。"""
+        """推送异动信号到所有已认证客户端（全局广播）。"""
         if not self._running:
             return
 
@@ -147,7 +182,7 @@ class WsServer:
             "timestamp": datetime.now().isoformat(),
         }, ensure_ascii=False)
 
-        targets = list(self._clients.keys())
+        targets = [ws for ws, info in self._clients.items() if info["authed"]]
         if targets:
             await asyncio.gather(
                 *[self._safe_send(ws, msg) for ws in targets],
@@ -166,10 +201,7 @@ class WsServer:
             "timestamp": datetime.now().isoformat(),
         }, ensure_ascii=False)
 
-        targets = [
-            ws for ws, codes in self._clients.items()
-            if code in codes or "*" in codes
-        ]
+        targets = self._get_subscribed_clients(code)
         if targets:
             await asyncio.gather(
                 *[self._safe_send(ws, msg) for ws in targets],
@@ -180,7 +212,8 @@ class WsServer:
         """安全发送消息（捕获断连异常）。"""
         try:
             await ws.send(msg)
-        except Exception:
+        except Exception as e:
+            logger.debug("safe_send failed, removing client: %s", e)
             self._clients.pop(ws, None)
 
     @property
@@ -195,8 +228,9 @@ class WsServer:
 # 全局单例
 _global_ws: WsServer | None = None
 
-def get_ws_server(host: str = "0.0.0.0", port: int = 8765) -> WsServer:
+
+def get_ws_server(host: str = "127.0.0.1", port: int = 8765, token: str = "") -> WsServer:
     global _global_ws
     if _global_ws is None:
-        _global_ws = WsServer(host, port)
+        _global_ws = WsServer(host, port, token)
     return _global_ws

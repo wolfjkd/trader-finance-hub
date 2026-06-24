@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>cn大陆金融数据 MCP Server</strong><br/>
-  基于 <a href="https://akshare.akfamily.xyz">AKShare</a> · 支持 <a href="https://modelcontextprotocol.io">MCP 协议</a> · 42 个金融工具
+  基于 <a href="https://akshare.akfamily.xyz">AKShare</a> · 支持 <a href="https://modelcontextprotocol.io">MCP 协议</a> · 61 个金融工具
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 
 **cn-financial-mcp** 是一个遵循 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) 标准的金融数据服务器，专注于cn大陆市场。它让任何支持 MCP 的 AI Agent（如 Claude Code、Cursor、自定义 Agent）都能直接调用 A 股行情、财报、行业、宏观经济等 **42 个金融工具**，无需 API Key，开箱即用。
 
-底层数据来源于 [AKShare](https://akshare.akfamily.xyz)，并内置多数据源自动 fallback 机制（东方财富 → 新浪 / 腾讯 / 同花顺），确保在不同网络环境下的可用性。
+底层数据来源于 [AKShare](https://akshare.akfamily.xyz)、eltdx 通达信协议、东财直连和同花顺，提供 61 个金融工具，覆盖行情、财务、估值、行业、新闻、宏观、信号数据等全方位金融数据。
 
 ---
 
@@ -48,8 +48,10 @@
 | **市场总览** | 5 | 指数概览、个股资金流、北向资金、涨跌停池、龙虎榜 |
 | **新闻公告** | 4 | 个股新闻、财报日历、公司公告、关键词搜索 |
 | **宏观与衍生** | 8 | GDP/CPI/PMI/M2、汇率、国债收益率、融资融券、高管增减持 |
+| **A股信号+品种** | 14 | 涨停归因/解禁/概念/预期/技术指标/北向/资金流/龙虎榜/行业/ETF/可转债 |
+| **eltdx 通达信独有** | 5 | 集合竞价/逐笔/F10/分时/K线（AKShare无此功能） |
 
-**合计 42 个工具**，覆盖从个股研究到宏观分析的完整链路。
+**合计 61 个工具**，覆盖从个股研究到宏观分析、从基础行情到信号数据的完整链路。
 
 ---
 
@@ -243,6 +245,41 @@ docker compose up -d
 
 </details>
 
+<details>
+<summary><b>A股信号+品种 (signal_data)</b></summary>
+
+| 工具 | 说明 |
+|:-----|:-----|
+| `get_hot_stocks` | 涨停股票+主题归因（同花顺 editorial） |
+| `get_lockup_expiry` | 限售解禁日历（东财 datacenter） |
+| `get_concept_attribution` | 概念/行业/地域板块归属（东财 push2delay） |
+| `get_profit_forecast` | 分析师一致预期EPS + Forward PE/PEG（同花顺） |
+| `get_technical_indicator` | 13种技术指标（MACD/RSI/布林带/ATR等） |
+| `list_technical_indicators` | 列出所有支持的技术指标及说明 |
+| `get_northbound_flow_signal` | 北向资金流向（沪深股通，同花顺 hsgtApi） |
+| `get_fund_flow_signal` | 个股资金流向（主力/大中小单，东财 push2） |
+| `get_dragon_tiger_signal` | 龙虎榜席位明细+机构动向（东财 datacenter） |
+| `get_industry_comparison_signal` | 行业横向对比排名（东财 push2） |
+| `get_etf_realtime_data` | ETF实时行情（IOPV/折价率/换手率，AKShare） |
+| `get_etf_kline_data` | ETF历史K线（日/周/月，支持复权，AKShare） |
+| `get_cb_realtime_data` | 可转债实时行情（溢价率/转股价/评级，AKShare） |
+| `get_cb_value_analysis_data` | 可转债价值分析（溢价率历史曲线，AKShare） |
+
+</details>
+
+<details>
+<summary><b>eltdx 通达信独有 (eltdx_data)</b></summary>
+
+| 工具 | 说明 |
+|:-----|:-----|
+| `eltdx_get_auction` | 集合竞价（9:15-9:25撮合过程） |
+| `eltdx_get_ticks` | 逐笔成交（价格/量/买卖方向） |
+| `eltdx_get_f10` | F10资料（公司概况/题材归因/财务诊断） |
+| `eltdx_get_minutes` | 分时数据（1分钟K线） |
+| `eltdx_get_kline` | K线（日/周/月/5m/15m/30m/60m） |
+
+</details>
+
 ---
 
 ## 🔄 多数据源 Fallback
@@ -264,6 +301,8 @@ docker compose up -d
 | 行业板块 | 东方财富 | 同花顺 |
 | 概念板块 | 东方财富 | 同花顺 |
 | 公司信息 | 东方财富 emweb | 新浪 |
+| 信号数据 | AKShare | 东财直连 / 同花顺 |
+| eltdx 数据 | 通达信私有协议 (TCP 7709) | 无备选（独有数据） |
 
 > 代码始终优先尝试东方财富。只有当主源连接失败时才自动切换，对调用方完全透明。
 
@@ -300,7 +339,9 @@ cn-financial-mcp/
 │   │   ├── industry.py       # 行业板块 (5 tools)
 │   │   ├── market.py         # 市场总览 (5 tools)
 │   │   ├── news_events.py    # 新闻公告 (4 tools)
-│   │   └── macro_fx.py       # 宏观衍生 (8 tools)
+│   │   ├── macro_fx.py       # 宏观衍生 (8 tools)
+│   │   ├── signal_data.py    # A股信号+品种 (14 tools)
+│   │   └── eltdx_data.py     # eltdx 通达信独有 (5 tools)
 │   └── utils/
 │       ├── cache.py          # TTL 缓存
 │       ├── fallback.py       # 多源 fallback
@@ -325,3 +366,5 @@ cn-financial-mcp/
 ## 🙏 致谢
 
 - [AKShare](https://akshare.akfamily.xyz) — 开源金融数据接口库
+- [eltdx](https://github.com/wolfjkd/eltdx) — 通达信私有协议 Python 实现
+- [stockstats](https://github.com/jealous/stockstats) — 技术指标计算引擎
